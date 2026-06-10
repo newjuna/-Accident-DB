@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxkJ98XNaLD7GW-ToGUEu7NPlB9-VkbtzCQ0QQMa7miiF1nyXU9yonu0QKh97q_XxvZkA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -32,6 +32,7 @@ const state = {
   charts: { type: null, dept: null, team: null, trend: null },
   captureCharts: { type: null, dept: null }, 
   repeatRows: [],
+  repeatPage: 1,
   listRows: [],
   listPage: 1,
   listModalMode: 'table', // 반복사고 매장 팝업만 카드형으로 표시하기 위한 상태
@@ -64,7 +65,8 @@ const state = {
 };
 
 const PAGE_SIZE_MODAL = 5;
-const PAGE_SIZE_DATA = 10; 
+const PAGE_SIZE_DATA = 10;
+const PAGE_SIZE_REPEAT = 10; 
 
 // AI 조언용 5초 타이머 디바운싱용 전역 핸들
 let aiAdviceTimer = null; 
@@ -376,6 +378,7 @@ function renderDashboard(data) {
 
   // 반복사고 페이지 데이터 바인딩
   state.repeatRows = data.repeatStores || [];
+  state.repeatPage = 1;
   state.selectedRegionFilter = null; // 대시보드 갱신 시 맵 필터 해제
   renderRepeatFull();
   renderRegionMap();
@@ -781,12 +784,31 @@ function renderRepeatFull() {
   const repeatFullList = $('repeatFullList');
   if (!repeatFullList) return;
   if (!rows.length) {
+    state.repeatPage = 1;
     repeatFullList.innerHTML = '<div class="empty-message">조건에 맞는 반복사고 매장이 없습니다.</div>';
     return;
   }
 
-  let html = '<div class="repeat-rank-list">';
-  rows.forEach((r, i) => {
+  const maxPage = Math.max(1, Math.ceil(rows.length / PAGE_SIZE_REPEAT));
+  if (state.repeatPage > maxPage) state.repeatPage = maxPage;
+  if (state.repeatPage < 1) state.repeatPage = 1;
+
+  const start = (state.repeatPage - 1) * PAGE_SIZE_REPEAT;
+  const pageRows = rows.slice(start, start + PAGE_SIZE_REPEAT);
+
+  let html = `
+    <div class="repeat-list-head">
+      <div>
+        <span class="repeat-list-kicker">반복사고 매장 리스트</span>
+        <strong>총 ${rows.length}개 매장</strong>
+      </div>
+      ${rows.length > PAGE_SIZE_REPEAT ? `<span class="repeat-list-page-chip">${state.repeatPage} / ${maxPage}</span>` : ''}
+    </div>
+    <div class="repeat-rank-list">
+  `;
+
+  pageRows.forEach((r, idx) => {
+    const i = start + idx;
     const typeClass = getAccidentTypeClass(r.topType);
     const rankClass = i === 0 ? 'rank-first' : (i === 1 ? 'rank-second' : (i === 2 ? 'rank-third' : ''));
     html += `
@@ -807,9 +829,28 @@ function renderRepeatFull() {
       </article>
     `;
   });
+
   html += '</div>';
+
+  if (rows.length > PAGE_SIZE_REPEAT) {
+    html += `
+      <div class="repeat-pager">
+        <button type="button" onclick="goRepeatPage(-1)" ${state.repeatPage <= 1 ? 'disabled' : ''}>이전</button>
+        <span>${state.repeatPage} / ${maxPage}</span>
+        <button type="button" onclick="goRepeatPage(1)" ${state.repeatPage >= maxPage ? 'disabled' : ''}>다음</button>
+      </div>
+    `;
+  }
+
   repeatFullList.innerHTML = html;
 }
+
+function goRepeatPage(step) {
+  const nextPage = Number(state.repeatPage || 1) + Number(step || 0);
+  state.repeatPage = nextPage;
+  renderRepeatFull();
+}
+window.goRepeatPage = goRepeatPage;
 
 /* ============ 반복사고 매장: 영업부별 가상 지역 맵 (v13.0: 매장 단위 최고 발생 건수 기준 정밀화) ============ */
 function renderRegionMap() {
@@ -905,6 +946,7 @@ function toggleRegionFilter(dept) {
   } else {
     state.selectedRegionFilter = dept;
   }
+  state.repeatPage = 1;
   renderRepeatFull();
   renderRegionMap();
 }
@@ -926,6 +968,7 @@ function switchView(view) {
   }
   if (view === 'repeat') {
     state.selectedRegionFilter = null; // 초기 진입 시 전체 노출
+    state.repeatPage = 1;
     renderRepeatFull();
     renderRegionMap();
   }
