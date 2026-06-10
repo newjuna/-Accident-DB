@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbzkNwXmWv4glWCEeyF4Crnr0KJrCq_oKUz9tzWl-X2LC21-obROdRwYnZ7UJnz8JgQAug/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1774,18 +1774,18 @@ function buildKpiSvg(ctx) {
   const yoyText = formatYoyText(ctx.currentYtd, ctx.prevYearYtd);
   return `
   <g class="shadow">
-    <rect x="72" y="128" width="1136" height="92" rx="18" fill="#ffffff" stroke="#d9d9d9"/>
-    <line x1="640" y1="144" x2="640" y2="204" stroke="#d9d9d9" stroke-width="2"/>
+    <rect x="72" y="128" width="1136" height="96" rx="18" fill="#ffffff" stroke="#d9d9d9"/>
+    <line x1="640" y1="146" x2="640" y2="206" stroke="#d9d9d9" stroke-width="2"/>
 
-    ${shieldIconSvg(116, 151, 52)}
-    <text x="188" y="163" class="dark" font-size="21" font-weight="900">총 재해</text>
-    <text x="188" y="192" class="red" font-size="33" font-weight="900">${ctx.currentTotal}건</text>
-    <text x="188" y="212" class="muted" font-size="14" font-weight="800">(전월 대비 ${svgEsc(diffText)})</text>
+    ${shieldIconSvg(116, 150, 52)}
+    <text x="188" y="160" class="dark" font-size="21" font-weight="900">총 재해</text>
+    <text x="188" y="196" class="red" font-size="34" font-weight="900">${ctx.currentTotal}건</text>
+    <text x="188" y="220" class="muted" font-size="14" font-weight="800">(전월 대비 ${svgEsc(diffText)})</text>
 
-    ${growthIconSvg(690, 151, 52)}
-    <text x="762" y="163" class="dark" font-size="21" font-weight="900">연간 누적</text>
-    <text x="762" y="192" class="navy" font-size="33" font-weight="900">${ctx.currentYtd}건</text>
-    <text x="762" y="212" class="muted" font-size="14" font-weight="800">(전년 동기 누적 대비 ${svgEsc(yoyText)})</text>
+    ${growthIconSvg(690, 150, 52)}
+    <text x="762" y="160" class="dark" font-size="21" font-weight="900">연간 누적</text>
+    <text x="762" y="196" class="navy" font-size="34" font-weight="900">${ctx.currentYtd}건</text>
+    <text x="762" y="220" class="muted" font-size="14" font-weight="800">(전년 동기 누적 대비 ${svgEsc(yoyText)})</text>
   </g>`;
 }
 
@@ -1855,24 +1855,26 @@ function buildDonutSvg(rows, monthText) {
   let start = -90;
   usable.forEach((r, i) => {
     const angle = (Number(r.count || 0) / total) * 360;
-    paths += donutSlicePath(1035, 370, 82, 42, start, start + angle, colors[i]);
+    paths += donutSlicePath(972, 373, 68, 34, start, start + angle, colors[i]);
     start += angle;
   });
-  const legendBaseY = 440;
-  const legendGap = 18;
+
+  const legendBaseY = 330;
+  const legendGap = 22;
   const legend = usable.map((r, i) => {
     const pct = ((Number(r.count || 0) / total) * 100).toFixed(1);
-    return `<circle cx="904" cy="${legendBaseY + i*legendGap}" r="5" fill="${colors[i]}"/><text x="918" y="${legendBaseY + 5 + i*legendGap}" class="small dark">${svgEsc(shortSvgText(r.label, 9))}</text><text x="1218" y="${legendBaseY + 5 + i*legendGap}" text-anchor="end" class="small dark">${pct}%</text>`;
+    const yy = legendBaseY + i * legendGap;
+    return `<circle cx="1070" cy="${yy}" r="5" fill="${colors[i]}"/><text x="1084" y="${yy+5}" class="small dark">${svgEsc(shortSvgText(r.label, 8))}</text><text x="1218" y="${yy+5}" text-anchor="end" class="small dark">${pct}%</text>`;
   }).join('');
+
   return `
   <g>
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="#fff" stroke="#d9d9d9"/>
     <text x="${x+18}" y="${y+30}" class="panel-title navy">${svgEsc(monthText)} 재해유형 비중</text>
-    <text x="${x+18}" y="${y+48}" class="muted" font-size="11" font-weight="800">선택 월 기준</text>
     ${paths}
-    <circle cx="1035" cy="370" r="43" fill="#fff"/>
-    <text x="1035" y="362" text-anchor="middle" class="dark" font-size="22" font-weight="900">주요</text>
-    <text x="1035" y="390" text-anchor="middle" class="dark" font-size="22" font-weight="900">유형</text>
+    <circle cx="972" cy="373" r="35" fill="#fff"/>
+    <text x="972" y="366" text-anchor="middle" class="dark" font-size="18" font-weight="900">주요</text>
+    <text x="972" y="390" text-anchor="middle" class="dark" font-size="18" font-weight="900">유형</text>
     ${legend}
   </g>`;
 }
