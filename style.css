@@ -450,6 +450,7 @@ h1 {
   border-bottom: 1px solid var(--line);
   padding: 9px;
   vertical-align: top;
+  color: #000000 !important;
 }
 .table-wrap tr:hover td {
   background: #f7f9fc;
@@ -527,11 +528,11 @@ h1 {
   gap: 0;
   border-top: 1px solid var(--line);
 }
-.detail-grid dt,
 .detail-grid dd {
   margin: 0;
   padding: 12px 16px;
   border-bottom: 1px solid var(--line);
+  color: #000000 !important;
 }
 .detail-grid dt {
   background: #f7f9fc;
@@ -732,4 +733,79 @@ h1 {
 .btn-sub:hover {
   background: #f8fafc !important;
   border-color: #94a3b8 !important;
+}
+
+/* ============ PPT 캡처 모달 스타일 (16:9 비율) ============ */
+.capture-board {
+  width: 1280px;
+  height: 720px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+.capture-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--line);
+  padding-bottom: 10px;
+}
+.capture-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--deep);
+}
+.capture-body-grid {
+  flex-grow: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  overflow: hidden;
+}
+/* 캡처 모달 내부 컴포넌트 축소 정돈 */
+.capture-body-grid .kpi-grid {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+  gap: 12px;
+}
+.capture-body-grid .kpi-card {
+  min-height: 90px;
+  padding: 14px;
+}
+.capture-body-grid .kpi-card strong {
+  font-size: 28px;
+}
+.capture-body-grid .panel {
+  min-height: auto;
+  height: 100%;
+  padding: 12px;
+  box-shadow: none;
+  border: 1px solid var(--line);
+}
+.capture-body-grid .panel h3 {
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.capture-body-grid .chart-container {
+  height: 200px;
+}
+.capture-foot {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--gray);
+  text-align: left;
+}
+
+/* 현년도 집계 중 텍스트 컬러 (초록색) */
+.kpi-counting {
+  color: #00B050 !important;
+  font-size: 14px;
+  font-weight: 900;
 }

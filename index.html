@@ -61,11 +61,11 @@
         <header class="topbar">
           <div>
             <h2>산업재해 현황 분석 대시보드</h2>
-            <p>원본DB를 2026년 현재 조직 기준으로 표준화하여 조회합니다.</p>
           </div>
           <div class="filters">
             <label>기준연도<select id="dashYear"></select></label>
             <label>기준월<select id="dashMonth"></select></label>
+            <button id="pptCaptureBtn" class="btn-sub" style="height: 42px; margin-top: auto; padding: 0 14px;">PPT 캡처 모드</button>
           </div>
         </header>
 
@@ -202,6 +202,22 @@
         <button class="modalClose">&times;</button>
       </div>
       <div id="detailBody"></div>
+    </div>
+  </div>
+
+  <!-- PPT 캡처 모달 (16:9 비율 흰색 보드) -->
+  <div id="captureModal" class="modal hidden">
+    <div class="capture-board">
+      <div class="capture-head">
+        <span class="capture-title">산업재해 현황 분석 대시보드 (PPT 캡처용)</span>
+        <button id="captureCloseBtn" class="modalClose">&times;</button>
+      </div>
+      <div id="captureBody" class="capture-body-grid">
+        <!-- 대시보드 복제본 렌더링 영역 -->
+      </div>
+      <div class="capture-foot">
+        * 본 화면은 16:9 비율 최적화 화면입니다. 전체 화면 캡처 도구로 영역을 지정하여 복사한 뒤 PPT에 붙여넣으세요.
+      </div>
     </div>
   </div>
 
