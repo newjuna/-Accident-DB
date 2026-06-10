@@ -6,7 +6,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwvKZi3SAAOSwcp3gHj-6TQMKRl3DRFlMEUbzvSJxDmoDsnSMcz2UgL-OdEB8aE72_-ew/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbxMAPXygmi8TKEoHO09LYI8LZbS5PY_wodfmheb3_QMCjBYDRZ7BNfP3gt79KpS4jUhvg/exec';
 
 /* ============ 상태 관리 ============ */
 
