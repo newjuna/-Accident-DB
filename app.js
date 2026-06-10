@@ -19,7 +19,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbz-LUjOuwLXGVXzXBqBK6-hoT3tdXnmVtxmpKzc9hVGf30RDJcPSGpXhyJpZ7xmCbVVGQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1114,7 +1114,6 @@ function drawCaptureChart(canvasId, chartKey, rows, yoyRows, horizontal) {
   const curCounts = (rows || []).map(r => r.count);
   const isSingleBar = (state.year === '전체' || state.year === state.minYear);
 
-  let datasets = [];
   const yoyMap = {};
   if (!isSingleBar) {
     (yoyRows || []).forEach(r => { yoyMap[cleanDeptName(r.label)] = r.count; });
