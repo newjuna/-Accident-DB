@@ -1062,6 +1062,114 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
   font-weight: 800;
 }
 
+
+/* 데이터 조회 - 영업부 퀵서비스 */
+.data-filter-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.dept-quick-service {
+  width: 100%;
+  background:
+    radial-gradient(circle at 96% 8%, rgba(230,0,51,.10), transparent 20%),
+    linear-gradient(135deg, rgba(255,255,255,.94), rgba(255,250,241,.98));
+  border: 1px solid rgba(0,43,109,.10);
+  border-radius: 22px;
+  padding: 15px 16px;
+  box-shadow: 0 8px 20px rgba(7,30,74,.055);
+}
+
+.dept-quick-service.is-empty {
+  border-style: dashed;
+  background: rgba(255,255,255,.72);
+}
+
+.dept-quick-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dept-quick-head span {
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 1000;
+}
+
+.dept-quick-head span::before {
+  content: '⚡';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 7px;
+  border-radius: 9px;
+  background: #fff0f3;
+  color: var(--red);
+}
+
+.dept-quick-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.dept-quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.dept-quick-btn {
+  min-height: 42px;
+  border: 1px solid rgba(0,43,109,.12);
+  background: #fff;
+  color: var(--navy);
+  border-radius: 999px;
+  padding: 8px 12px 8px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 1000;
+  box-shadow: 0 6px 14px rgba(7,30,74,.045);
+  transition: .16s ease;
+}
+
+.dept-quick-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(0,59,143,.30);
+  box-shadow: 0 10px 20px rgba(7,30,74,.08);
+}
+
+.dept-quick-btn.active {
+  background: linear-gradient(135deg, var(--red), #ff3358);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(230,0,51,.16);
+}
+
+.dept-quick-btn b {
+  min-width: 42px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #eef6ff;
+  color: var(--blue);
+  font-size: 12px;
+  text-align: center;
+}
+
+.dept-quick-btn.active b {
+  background: rgba(255,255,255,.22);
+  color: #fff;
+}
+
 /* 데이터 조회 - 플레이풀 카드형 */
 .data-result-head {
   display: flex;
@@ -1315,6 +1423,14 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
 
 /* v13 반응형 보강 */
 @media (max-width: 1200px) {
+  .dept-quick-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .dept-quick-btn {
+    flex: 1 1 150px;
+    justify-content: space-between;
+  }
   .data-card-list {
     grid-template-columns: 1fr;
   }

@@ -1,18 +1,20 @@
 /* ============================================================
- *  산업재해 현황 분석 대시보드 v13.0 — 클라이언트
+ *  산업재해 현황 분석 대시보드 v14.0 — 클라이언트
  *
  *  ■ 기준: 사용자가 제공한 최신 index.html / style.css / app.js 구조 유지
  *  ■ Apps Script 배포 URL은 아래 API_URL 값을 사용합니다.
- *  ■ 변경사항 v13.0:
+ *  ■ 변경사항 v14.0:
  *    - 기존 데이터 조회·대시보드·반복사고 조회 기능 유지
  *    - 사고 상세보기 팝업을 플레이풀 카드형 디자인으로 개선
  *    - 데이터 조회 결과를 카드형 리스트로 개선
  *    - 반복사고 매장 리스트를 랭킹 카드형으로 개선
  *    - 과거 버전 주석을 v13 기준으로 정리
+ *    - 데이터 조회: 선택한 연도/월에 데이터가 있는 영업부만 드롭다운 표시
+ *    - 데이터 조회: 영업부 퀵서비스 버튼 추가
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxkJ98XNaLD7GW-ToGUEu7NPlB9-VkbtzCQ0QQMa7miiF1nyXU9yonu0QKh97q_XxvZkA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -35,6 +37,8 @@ const state = {
   dataRows: [],
   dataPage: 1,
   initFilterData: null, // 초기 필터 정보 캐시
+  dataOptionRows: [], // 선택한 연도/월 기준 전체 행 캐시(영업부/팀 옵션 생성용)
+  dataOptionKey: '', // dataOptionRows가 어느 연도/월 기준인지 확인하는 키
   
   // 데이터 조회 활성 필터 상태
   activeFilters: {
@@ -869,20 +873,143 @@ function switchView(view) {
   }
 }
 
-/* ============ 데이터 조회: v13.0 간소화된 5단계 필터 및 AI 안전 보건 조언 멘트 연동 ============ */
+/* ============ 데이터 조회: v14.0 기간 연동 필터 + 영업부 퀵서비스 ============ */
 
-/**
- * 5단계 필터 렌더링 (매장 및 유형 제거)
- */
+function getDataPeriodKey() {
+  const f = state.activeFilters;
+  return `${f.year || ''}|${f.month || ''}`;
+}
+
+function resetDownstreamDataFilters(resetMonth) {
+  const f = state.activeFilters;
+  if (resetMonth) f.month = '';
+  f.dept = '전체';
+  f.team = '전체';
+  f.storeSearch = '';
+  state.dataOptionRows = [];
+  state.dataOptionKey = '';
+  state.dataRows = [];
+  state.dataPage = 1;
+}
+
+async function loadDataFilterOptions(force) {
+  const f = state.activeFilters;
+  if (!f.year || !f.month) {
+    state.dataOptionRows = [];
+    state.dataOptionKey = '';
+    return;
+  }
+
+  const key = getDataPeriodKey();
+  if (!force && state.dataOptionKey === key) return;
+
+  const optionFilters = {
+    year: f.year,
+    month: f.month,
+    dept: '전체',
+    team: '전체',
+    store: '전체',
+    type: '전체',
+    storeSearch: ''
+  };
+
+  const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(optionFilters) });
+  state.dataOptionRows = res.rows || [];
+  state.dataOptionKey = key;
+}
+
+function getDeptCounts_() {
+  const counts = {};
+  (state.dataOptionRows || []).forEach(r => {
+    const dept = r.stdDept || '';
+    if (!dept) return;
+    counts[dept] = (counts[dept] || 0) + 1;
+  });
+  return counts;
+}
+
+function getAvailableDepartments_() {
+  const init = state.initFilterData || {};
+  const counts = getDeptCounts_();
+  const available = Object.keys(counts);
+
+  const ordered = [];
+  (init.departments || []).forEach(d => {
+    if (counts[d]) ordered.push(d);
+  });
+  available.forEach(d => {
+    if (!ordered.includes(d)) ordered.push(d);
+  });
+  return ordered;
+}
+
+function getFilteredTeams_(dept) {
+  const teams = new Set();
+  (state.dataOptionRows || []).forEach(r => {
+    if ((dept === '전체' || r.stdDept === dept) && r.stdTeam) teams.add(r.stdTeam);
+  });
+  return [...teams].sort();
+}
+
+function makeDeptQuickServiceHtml() {
+  const f = state.activeFilters;
+  if (!f.year || !f.month) return '';
+
+  const deptCounts = getDeptCounts_();
+  const departments = getAvailableDepartments_();
+  const total = (state.dataOptionRows || []).length;
+
+  if (!departments.length) {
+    return `
+      <div class="dept-quick-service is-empty">
+        <div class="dept-quick-head">
+          <span>빠른 영업부 조회</span>
+          <small>선택한 기간에 등록된 사고 데이터가 없습니다.</small>
+        </div>
+      </div>
+    `;
+  }
+
+  let html = `
+    <div class="dept-quick-service">
+      <div class="dept-quick-head">
+        <span>빠른 영업부 조회</span>
+        <small>선택한 기간에 데이터가 있는 영업부만 표시됩니다.</small>
+      </div>
+      <div class="dept-quick-buttons">
+        <button type="button" class="dept-quick-btn ${f.dept === '전체' ? 'active' : ''}" onclick="selectQuickDept('전체')">
+          <span>전체</span><b>${total}건</b>
+        </button>
+  `;
+
+  departments.forEach(d => {
+    html += `
+        <button type="button" class="dept-quick-btn ${f.dept === d ? 'active' : ''}" onclick="selectQuickDept('${escapeAttr(d)}')">
+          <span>${esc(cleanDeptName(d))}</span><b>${deptCounts[d] || 0}건</b>
+        </button>
+    `;
+  });
+
+  html += `
+      </div>
+    </div>
+  `;
+  return html;
+}
+
 function renderDataFilters() {
   const container = $('dataFiltersContainer');
   if (!container || !state.initFilterData) return;
 
   const init = state.initFilterData;
   const f = state.activeFilters;
+  const availableDepartments = getAvailableDepartments_();
 
-  // 1. 연도 (기본 노출)
-  let html = `<label>연도<select id="dataYear">`;
+  let html = makeDeptQuickServiceHtml();
+  html += '<div class="data-filter-row">';
+
+  // 1. 연도
+  html += `<label>연도<select id="dataYear">`;
   const numericYears = init.years.filter(y => y !== '전체');
   numericYears.forEach(y => {
     html += `<option value="${y}" ${String(y) === String(f.year) ? 'selected' : ''}>${y}</option>`;
@@ -891,24 +1018,25 @@ function renderDataFilters() {
 
   // 2. 월
   if (f.year) {
-    const months = ['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+    const months = ['', '전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
     html += `<label>월<select id="dataMonth">`;
     months.forEach(m => {
-      html += `<option value="${m}" ${String(m) === String(f.month) ? 'selected' : ''}>${m}</option>`;
+      const label = m || '월 선택';
+      html += `<option value="${m}" ${String(m) === String(f.month) ? 'selected' : ''}>${label}</option>`;
     });
     html += `</select></label>`;
   }
 
-  // 3. 영업부
+  // 3. 영업부: 선택한 연도/월에 실제 데이터가 있는 영업부만 표시
   if (f.year && f.month) {
     html += `<label>영업부<select id="filterDept"><option value="전체">전체</option>`;
-    (init.departments || []).forEach(d => {
+    availableDepartments.forEach(d => {
       html += `<option value="${d}" ${String(d) === String(f.dept) ? 'selected' : ''}>${cleanDeptName(d)}</option>`;
     });
     html += `</select></label>`;
   }
 
-  // 4. 팀 (영업부 선택 시 동적 생성)
+  // 4. 팀: 선택한 연도/월 + 영업부에 실제 데이터가 있는 팀만 표시
   if (f.year && f.month && f.dept && f.dept !== '전체') {
     const filteredTeams = getFilteredTeams_(f.dept);
     html += `<label>팀<select id="filterTeam"><option value="전체">전체</option>`;
@@ -918,76 +1046,107 @@ function renderDataFilters() {
     html += `</select></label>`;
   }
 
-  // 5. 매장명 검색 (팀까지 렌더링 시 노출)
+  // 5. 매장명 검색
   if (f.year && f.month && f.dept && f.dept !== '전체') {
-    html += `<label>매장명 검색<input id="filterStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력"></label>`;
+    html += `<label>매장명 검색<input id="filterStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력 후 Enter"></label>`;
   }
 
+  html += '</div>';
   container.innerHTML = html;
 
-  // 이벤트 핸들러 바인딩 및 자동 실시간 조회 연동
   const selYear = $('dataYear');
-  if (selYear) selYear.addEventListener('change', (e) => { f.year = e.target.value; renderDataFilters(); loadDataTable(); });
+  if (selYear) selYear.addEventListener('change', (e) => {
+    f.year = e.target.value;
+    resetDownstreamDataFilters(true);
+    renderDataFilters();
+    renderDataTablePage();
+  });
 
   const selMonth = $('dataMonth');
-  if (selMonth) selMonth.addEventListener('change', (e) => { f.month = e.target.value; renderDataFilters(); loadDataTable(); });
+  if (selMonth) selMonth.addEventListener('change', (e) => {
+    f.month = e.target.value;
+    f.dept = '전체';
+    f.team = '전체';
+    f.storeSearch = '';
+    state.dataOptionRows = [];
+    state.dataOptionKey = '';
+    if (!f.month) {
+      state.dataRows = [];
+      renderDataFilters();
+      renderDataTablePage();
+      return;
+    }
+    loadDataTable({ reloadOptions: true, loadingMessage: '선택한 기간의 영업부를 불러오는 중입니다' });
+  });
 
   const selDept = $('filterDept');
-  if (selDept) selDept.addEventListener('change', (e) => { 
-    f.dept = e.target.value; 
-    f.team = '전체'; 
-    renderDataFilters(); 
-    loadDataTable(); 
+  if (selDept) selDept.addEventListener('change', (e) => {
+    f.dept = e.target.value;
+    f.team = '전체';
+    f.storeSearch = '';
+    renderDataFilters();
+    loadDataTable();
   });
 
   const selTeam = $('filterTeam');
-  if (selTeam) selTeam.addEventListener('change', (e) => { 
-    f.team = e.target.value; 
-    renderDataFilters(); 
-    loadDataTable(); 
+  if (selTeam) selTeam.addEventListener('change', (e) => {
+    f.team = e.target.value;
+    renderDataFilters();
+    loadDataTable();
   });
 
   const txtSearch = $('filterStoreSearch');
   if (txtSearch) {
-    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; triggerAiAdviceTimer(); }); // 타이핑 마다 AI 타이머 재연장
+    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; triggerAiAdviceTimer(); });
     txtSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDataTable(); });
   }
 }
 
-function getFilteredTeams_(dept) {
-  const init = state.initFilterData;
-  if (!init) return [];
-  const teams = new Set();
-  state.dataRows.forEach(r => {
-    if (r.stdDept === dept && r.stdTeam) teams.add(r.stdTeam);
-  });
-  return [...teams].sort();
+function selectQuickDept(dept) {
+  const f = state.activeFilters;
+  f.dept = dept || '전체';
+  f.team = '전체';
+  f.storeSearch = '';
+  renderDataFilters();
+  loadDataTable();
 }
+window.selectQuickDept = selectQuickDept;
 
 /**
  * 실시간 자동 쿼리 수행
  */
-async function loadDataTable() {
+async function loadDataTable(options = {}) {
   const f = state.activeFilters;
   if (!f.year || !f.month) return;
 
-  showLoading('데이터 조회 중입니다');
+  showLoading(options.loadingMessage || '데이터 조회 중입니다');
   try {
+    if (options.reloadOptions || state.dataOptionKey !== getDataPeriodKey()) {
+      await loadDataFilterOptions(true);
+    }
+
+    const availableDepartments = getAvailableDepartments_();
+    if (f.dept !== '전체' && !availableDepartments.includes(f.dept)) {
+      f.dept = '전체';
+      f.team = '전체';
+      f.storeSearch = '';
+    }
+
     const queryFilters = {
       year: f.year,
       month: f.month,
       dept: f.dept,
       team: f.team,
-      store: '전체', // API 파라미터는 백엔드 호환성을 위해 고정값 유지
+      store: '전체',
       type: '전체',
       storeSearch: f.storeSearch
     };
     const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(queryFilters) });
     state.dataRows = res.rows || [];
     state.dataPage = 1;
+
+    renderDataFilters();
     renderDataTablePage();
-    
-    // 조회가 끝나면 AI 안전 진단 타이머(5초 디바운스) 작동 시작
     triggerAiAdviceTimer();
   } catch (err) {
     alert('데이터 조회 오류: ' + (err.message || err));
