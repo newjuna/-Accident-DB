@@ -8,9 +8,8 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
-<body class="v10-playful-retail">
+<body>
 
   <!-- 로딩 오버레이 -->
   <div id="loadingOverlay" class="loading-overlay hidden">
@@ -49,15 +48,10 @@
         <img src="logo.png" alt="ASUNG DAISO" class="side-logo-img">
       </div>
       <div id="sideDivision" class="division-pill">-</div>
-      <button class="nav active" data-view="dashboard"><span class="nav-ico">▦</span>대시보드</button>
-      <button class="nav" data-view="data"><span class="nav-ico">▤</span>데이터 조회</button>
-      <button class="nav" data-view="repeat"><span class="nav-ico">⌖</span>반복사고 매장</button>
-      <button id="logoutBtn" class="nav logout"><span class="nav-ico">↪</span>로그아웃</button>
-      <div class="side-note">
-        <div class="pin-dot"></div>
-        <strong>안전은 오늘의 습관, 내일의 행복!</strong>
-        <span>ASUNG DAISO Safety Board</span>
-      </div>
+      <button class="nav active" data-view="dashboard">대시보드</button>
+      <button class="nav" data-view="data">데이터 조회</button>
+      <button class="nav" data-view="repeat">반복사고 매장</button>
+      <button id="logoutBtn" class="nav logout">로그아웃</button>
     </aside>
 
     <!-- 메인 영역 -->
@@ -65,21 +59,14 @@
 
       <!-- ==================== 대시보드 페이지 ==================== -->
       <section id="dashboardPage" class="page">
-        <header class="topbar dashboard-hero">
-          <div class="hero-copy">
-            <div class="hero-kicker">ASUNG DAISO · SAFETY FIRST</div>
+        <header class="topbar">
+          <div>
             <h2>산업재해 현황 분석 대시보드</h2>
-            <p>매장 사고 흐름을 한눈에 보고, 오늘의 안전 행동을 바로 정합니다.</p>
           </div>
-          <div class="hero-art" aria-hidden="true">
-            <span class="art-basket">▣</span>
-            <span class="art-pencil">▌</span>
-            <span class="art-spark">✦</span>
-          </div>
-          <div class="filters hero-filters">
+          <div class="filters">
             <label>기준연도<select id="dashYear"></select></label>
             <label>기준월<select id="dashMonth"></select></label>
-            <button id="pptCaptureBtn" class="btn-sub">PPT 캡처 모드</button>
+            <button id="pptCaptureBtn" class="btn-sub" style="height: 42px; margin-top: auto; padding: 0 14px;">PPT 캡처 모드</button>
           </div>
         </header>
 
@@ -129,11 +116,9 @@
 
       <!-- ==================== 데이터 조회 페이지 ==================== -->
       <section id="dataPage" class="page hidden">
-        <header class="topbar page-titlebar">
+        <header class="topbar">
           <div>
-            <div class="hero-kicker">ACCIDENT DATA FINDER</div>
             <h2>데이터 조회</h2>
-            <p>연도 → 월 → 영업부 → 팀 순서로 필요한 사고 기록을 빠르게 확인합니다.</p>
           </div>
         </header>
         <div class="panel data-panel">
@@ -145,9 +130,8 @@
               <button id="filterResetBtn" class="btn-sub">초기화</button>
             </div>
           </div>
-          <div id="aiAdviceBox" class="ai-advice-card">
-            <div class="ai-advice-content">🤖 AI 안전진단 분석 대기 중... 필터를 선택해 주세요.</div>
-          </div>
+          <!-- AI 안전보건 조언 박스 추가 -->
+          <div id="aiAdviceBox" class="ai-advice-card hidden"></div>
           <div id="dataResult" class="table-wrap"></div>
           <div id="dataPager" class="pager hidden">
             <button id="dataPrev">이전</button>
@@ -159,11 +143,10 @@
 
       <!-- ==================== 반복사고 매장 전체 페이지 ==================== -->
       <section id="repeatPage" class="page hidden">
-        <header class="topbar page-titlebar">
+        <header class="topbar">
           <div>
-            <div class="hero-kicker">REPEAT STORE WATCH</div>
             <h2>반복사고 매장</h2>
-            <p>최근 1년간 동일 매장 2건 이상 사고 발생 현황을 확인합니다.</p>
+            <p>최근 1년간 동일 매장 2건 이상 사고 발생 현황</p>
           </div>
         </header>
         <div class="map-and-list-grid">
@@ -183,7 +166,7 @@
 
   <!-- 사고 리스트 팝업 -->
   <div id="listModal" class="modal hidden">
-    <div class="modal-box wide">
+    <div class="modal-box wide list-modal-box">
       <div class="modal-head">
         <h3 id="listModalTitle">사고 리스트</h3>
         <button class="modalClose">&times;</button>
@@ -199,7 +182,7 @@
 
   <!-- 사고 상세 팝업 -->
   <div id="detailModal" class="modal hidden">
-    <div class="modal-box">
+    <div class="modal-box detail-modal-box">
       <div class="modal-head">
         <h3>사고 상세보기</h3>
         <button class="modalClose">&times;</button>
@@ -213,20 +196,17 @@
     <div class="capture-board">
       <div class="capture-head">
         <span class="capture-title">산업재해 현황 분석 대시보드 (PPT 캡처용)</span>
-        <div style="display: flex; align-items: center;">
-          <button id="captureDownloadBtn" class="btn-sub" style="margin-right: 12px; height: 36px !important; line-height: 36px; padding: 0 14px !important; font-size: 13px;">이미지 다운로드</button>
-          <button id="captureCloseBtn" class="modalClose">&times;</button>
-        </div>
+        <button id="captureCloseBtn" class="modalClose">&times;</button>
       </div>
       <div id="captureBody" class="capture-body-grid">
         <!-- 대시보드 복제본 렌더링 영역 -->
       </div>
       <div class="capture-foot">
-        * 본 화면은 16:9 비율 최적화 화면입니다. [이미지 다운로드] 버튼을 눌러 PNG로 저장 후 PPT에 붙여넣으세요.
+        * 본 화면은 16:9 비율 최적화 화면입니다. 전체 화면 캡처 도구로 영역을 지정하여 복사한 뒤 PPT에 붙여넣으세요.
       </div>
     </div>
   </div>
 
-  <script src="app.js?v=12"></script>
+  <script src="app.js"></script>
 </body>
 </html>
