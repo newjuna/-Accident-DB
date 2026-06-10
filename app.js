@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbzXEvngf-pXH3dIEZn3A2CdTL7mbB0hrxXfzMORIrNgp0Gr6ZuC37bZ_4btXUTjbEzwfA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1816,21 +1816,32 @@ function buildSummarySvgReport(ctx) {
 
 function buildKpiSvg(ctx) {
   const diffText = formatMonthlyDiff(ctx.monthDiff);
+  const diffColor = getChangeSvgColor(ctx.monthDiff);
+
   const yoyText = formatYoyText(ctx.currentYtd, ctx.prevYearYtd);
+  const yoyDiff = Number(ctx.currentYtd || 0) - Number(ctx.prevYearYtd || 0);
+  const yoyColor = getYoySvgColor(ctx.currentYtd, ctx.prevYearYtd);
+
   return `
   <g class="shadow">
     <rect x="72" y="128" width="1136" height="96" rx="18" fill="#ffffff" stroke="#d9d9d9"/>
     <line x1="640" y1="146" x2="640" y2="206" stroke="#d9d9d9" stroke-width="2"/>
 
     ${shieldIconSvg(116, 150, 52)}
-    <text x="188" y="160" class="dark" font-size="21" font-weight="900">총 재해</text>
-    <text x="188" y="196" class="red" font-size="34" font-weight="900">${ctx.currentTotal}건</text>
-    <text x="188" y="220" class="muted" font-size="14" font-weight="800">(전월 대비 ${svgEsc(diffText)})</text>
+    <text x="188" y="164" class="dark" font-size="21" font-weight="900">총 재해</text>
+    <text x="188" y="202" class="red" font-size="36" font-weight="900">${ctx.currentTotal}건</text>
+
+    <rect x="374" y="153" width="214" height="52" rx="14" fill="${diffColor}" opacity="0.10"/>
+    <text x="481" y="174" text-anchor="middle" fill="#444" font-size="14" font-weight="900">전월 대비</text>
+    <text x="481" y="199" text-anchor="middle" fill="${diffColor}" font-size="20" font-weight="900">${svgEsc(diffText)}</text>
 
     ${growthIconSvg(690, 150, 52)}
-    <text x="762" y="160" class="dark" font-size="21" font-weight="900">연간 누적</text>
-    <text x="762" y="196" class="navy" font-size="34" font-weight="900">${ctx.currentYtd}건</text>
-    <text x="762" y="220" class="muted" font-size="14" font-weight="800">(전년 동기 누적 대비 ${svgEsc(yoyText)})</text>
+    <text x="762" y="164" class="dark" font-size="21" font-weight="900">연간 누적</text>
+    <text x="762" y="202" class="navy" font-size="36" font-weight="900">${ctx.currentYtd}건</text>
+
+    <rect x="956" y="153" width="222" height="52" rx="14" fill="${yoyColor}" opacity="0.10"/>
+    <text x="1067" y="174" text-anchor="middle" fill="#444" font-size="13" font-weight="900">전년 동기 누적 대비</text>
+    <text x="1067" y="199" text-anchor="middle" fill="${yoyColor}" font-size="19" font-weight="900">${svgEsc(yoyText)}</text>
   </g>`;
 }
 
@@ -1956,8 +1967,7 @@ function buildTopListSvg(rows, x, y, title) {
   return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff" stroke="#d9d9d9"/><text x="${x+16}" y="${y+29}" class="panel-title navy">${svgEsc(title)}</text>${items}</g>`;
 }
 
-function buildPointSvg(ctx, topTypeName, topDeptName) {
-  const x = 818, y = 572, w = 424, h = 126;
+function buildPointSvg(ctx, topTypeName, topDeptName, x = 828, y = 522, w = 414, h = 168) {
   const diffAbs = Math.abs(Number(ctx.monthDiff || 0));
   const diffWord = ctx.monthDiff <= 0 ? '감소' : '증가';
 
@@ -1965,20 +1975,20 @@ function buildPointSvg(ctx, topTypeName, topDeptName) {
     return `
   <g>
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff7f7" stroke="#ffc7c7"/>
-    <text x="${x+18}" y="${y+31}" class="red" font-size="20" font-weight="900">다음달 중점관리 포인트</text>
-    <text x="${x+24}" y="${y+62}" class="dark" font-size="14" font-weight="900">• <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan> 사고 중심 TBM·작업 전 주의 강화</text>
-    <text x="${x+24}" y="${y+91}" class="dark" font-size="14" font-weight="900">• <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan> 중심 현장점검 우선 실시</text>
-    <text x="${x+24}" y="${y+120}" class="dark" font-size="14" font-weight="900">• 반복사고 매장 개선조치 이행 여부 확인</text>
+    <text x="${x+18}" y="${y+34}" class="red" font-size="20" font-weight="900">다음달 중점관리 포인트</text>
+    <text x="${x+24}" y="${y+74}" class="dark" font-size="14" font-weight="900">• <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan> 사고 중심 TBM·작업 전 주의 강화</text>
+    <text x="${x+24}" y="${y+108}" class="dark" font-size="14" font-weight="900">• <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan> 중심 현장점검 우선 실시</text>
+    <text x="${x+24}" y="${y+142}" class="dark" font-size="14" font-weight="900">• 반복사고 매장 개선조치 이행 여부 확인</text>
   </g>`;
   }
 
   return `
   <g>
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff7f7" stroke="#ffc7c7"/>
-    <text x="${x+18}" y="${y+31}" class="red" font-size="20" font-weight="900">핵심 포인트</text>
-    <text x="${x+24}" y="${y+62}" class="dark" font-size="14" font-weight="900">• 전월 대비 재해 <tspan class="red" font-weight="900">${diffAbs}건 ${diffWord}</tspan></text>
-    <text x="${x+24}" y="${y+91}" class="dark" font-size="14" font-weight="900">• 최다 재해유형은 <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan></text>
-    <text x="${x+24}" y="${y+120}" class="dark" font-size="14" font-weight="900">• 집중관리 영업부 <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan></text>
+    <text x="${x+18}" y="${y+34}" class="red" font-size="20" font-weight="900">핵심 포인트</text>
+    <text x="${x+24}" y="${y+74}" class="dark" font-size="14" font-weight="900">• 전월 대비 재해 <tspan class="red" font-weight="900">${diffAbs}건 ${diffWord}</tspan></text>
+    <text x="${x+24}" y="${y+108}" class="dark" font-size="14" font-weight="900">• 최다 재해유형은 <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan></text>
+    <text x="${x+24}" y="${y+142}" class="dark" font-size="14" font-weight="900">• 집중관리 영업부 <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan></text>
   </g>`;
 }
 
@@ -2015,6 +2025,23 @@ function formatYoyText(currentValue, previousValue) {
   if (Math.abs(pct) < 0.05) return '동일';
   const abs = Math.abs(pct).toFixed(1);
   return pct > 0 ? `▲ ${abs}% 증가` : `▼ ${abs}% 감소`;
+}
+
+function getChangeSvgColor(n) {
+  n = Number(n || 0);
+  if (n > 0) return '#ff1a1a';  // 증가: 빨강
+  if (n < 0) return '#0b2f86';  // 감소: 파랑
+  return '#0FA36B';             // 동일: 초록
+}
+
+function getYoySvgColor(currentValue, previousValue) {
+  const c = Number(currentValue || 0);
+  const p = Number(previousValue || 0);
+  if (p <= 0) return c <= 0 ? '#0FA36B' : '#666666';
+  const diff = c - p;
+  if (diff > 0) return '#ff1a1a';  // 증가: 빨강
+  if (diff < 0) return '#0b2f86';  // 하락: 파랑
+  return '#0FA36B';                // 동일: 초록
 }
 
 function getMonthlyDiffClass(n) {
