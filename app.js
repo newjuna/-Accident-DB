@@ -11,10 +11,12 @@
  *    - 과거 버전 주석을 v13 기준으로 정리
  *    - 데이터 조회: 선택한 연도/월에 데이터가 있는 영업부만 드롭다운 표시
  *    - 데이터 조회: 영업부 퀵서비스 버튼 추가
+ *    - 데이터 조회: 매장명 검색창을 초기 화면부터 노출
+ *    - 모바일 화면 가독성 보강
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxkJ98XNaLD7GW-ToGUEu7NPlB9-VkbtzCQ0QQMa7miiF1nyXU9yonu0QKh97q_XxvZkA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1102,9 +1104,10 @@ function renderDataFilters() {
     html += `</select></label>`;
   }
 
-  // 5. 매장명 검색
-  if (f.year && f.month && f.dept && f.dept !== '전체') {
-    html += `<label>매장명 검색<input id="filterStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력 후 Enter"></label>`;
+  // 5. 매장명 검색: 월/영업부 선택 전에도 바로 검색할 수 있도록 상시 노출
+  if (f.year) {
+    html += `<label class="store-search-label">매장명 검색<input id="filterStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명만 입력 후 Enter"></label>`;
+    html += `<button type="button" id="storeSearchBtn" class="btn-sub store-search-btn">검색</button>`;
   }
 
   html += '</div>';
@@ -1123,7 +1126,6 @@ function renderDataFilters() {
     f.month = e.target.value;
     f.dept = '전체';
     f.team = '전체';
-    f.storeSearch = '';
     state.dataOptionRows = [];
     state.dataOptionKey = '';
     if (!f.month) {
@@ -1139,7 +1141,6 @@ function renderDataFilters() {
   if (selDept) selDept.addEventListener('change', (e) => {
     f.dept = e.target.value;
     f.team = '전체';
-    f.storeSearch = '';
     renderDataFilters();
     loadDataTable();
   });
@@ -1153,8 +1154,13 @@ function renderDataFilters() {
 
   const txtSearch = $('filterStoreSearch');
   if (txtSearch) {
-    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; triggerAiAdviceTimer(); });
-    txtSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDataTable(); });
+    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; });
+    txtSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDataTable({ storeSearchOnly: !f.month }); });
+  }
+
+  const storeSearchBtn = $('storeSearchBtn');
+  if (storeSearchBtn) {
+    storeSearchBtn.addEventListener('click', () => loadDataTable({ storeSearchOnly: !f.month }));
   }
 }
 
@@ -1162,7 +1168,6 @@ function selectQuickDept(dept) {
   const f = state.activeFilters;
   f.dept = dept || '전체';
   f.team = '전체';
-  f.storeSearch = '';
   renderDataFilters();
   loadDataTable();
 }
@@ -1173,19 +1178,22 @@ window.selectQuickDept = selectQuickDept;
  */
 async function loadDataTable(options = {}) {
   const f = state.activeFilters;
-  if (!f.year || !f.month) return;
+  const hasStoreSearch = String(f.storeSearch || '').trim() !== '';
+
+  // 연도는 기본 기준으로 유지하고, 월 선택 전에는 매장명 검색이 있을 때만 조회한다.
+  if (!f.year) return;
+  if (!f.month && !hasStoreSearch) return;
 
   showLoading(options.loadingMessage || '데이터 조회 중입니다');
   try {
-    if (options.reloadOptions || state.dataOptionKey !== getDataPeriodKey()) {
+    if (f.month && (options.reloadOptions || state.dataOptionKey !== getDataPeriodKey())) {
       await loadDataFilterOptions(true);
     }
 
-    const availableDepartments = getAvailableDepartments_();
-    if (f.dept !== '전체' && !availableDepartments.includes(f.dept)) {
+    const availableDepartments = f.month ? getAvailableDepartments_() : [];
+    if (f.month && f.dept !== '전체' && !availableDepartments.includes(f.dept)) {
       f.dept = '전체';
       f.team = '전체';
-      f.storeSearch = '';
     }
 
     const queryFilters = {

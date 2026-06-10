@@ -1225,6 +1225,19 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
   align-items: flex-end;
 }
 
+.store-search-label {
+  flex: 1 1 260px;
+  min-width: 240px;
+}
+
+.store-search-label input {
+  width: 100%;
+}
+
+.store-search-btn {
+  min-width: 82px;
+}
+
 .dept-quick-service {
   width: 100%;
   background:
@@ -1717,4 +1730,191 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
 .repeat-list-modal-box .repeat-accident-card .data-type-badge.type-fall,
 .repeat-list-modal-box .repeat-accident-card .data-type-badge.type-gray {
   color: #fff !important;
+}
+
+
+/* ============================================================
+   v14 모바일 사용성 보강
+   - 기존 PC 디자인 유지
+   - 768px 이하에서 데이터 조회/카드/모달을 모바일 화면에 맞게 정렬
+   ============================================================ */
+@media (max-width: 768px) {
+  body {
+    background: linear-gradient(180deg, #fffaf1 0%, #f7fbff 100%);
+  }
+
+  .main {
+    padding: 14px 12px 28px;
+  }
+
+  .page-titlebar,
+  .dashboard-hero {
+    border-radius: 22px;
+    padding: 18px;
+  }
+
+  .topbar h2 {
+    font-size: 24px;
+    line-height: 1.25;
+  }
+
+  .topbar p {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .panel {
+    border-radius: 22px;
+    padding: 16px;
+    min-height: auto;
+  }
+
+  .data-panel {
+    min-height: auto;
+  }
+
+  .data-filters-wrapper {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .data-filter-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .data-filter-row label,
+  .store-search-label {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .store-search-btn,
+  .btn-group,
+  .btn-group .btn-sub {
+    width: 100%;
+  }
+
+  .dept-quick-service {
+    padding: 14px;
+    border-radius: 20px;
+  }
+
+  .dept-quick-head {
+    align-items: flex-start;
+  }
+
+  .dept-quick-buttons {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .dept-quick-btn {
+    flex: 0 0 auto;
+    min-width: 132px;
+    justify-content: space-between;
+  }
+
+  .data-result-head {
+    align-items: flex-start;
+    flex-direction: column;
+    border-radius: 18px;
+  }
+
+  .data-result-count {
+    width: 100%;
+    text-align: center;
+  }
+
+  .data-card-list {
+    grid-template-columns: 1fr;
+  }
+
+  .data-record-card {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    border-radius: 20px;
+    padding: 15px;
+  }
+
+  .data-record-left {
+    align-items: flex-start;
+  }
+
+  .data-record-store {
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .data-detail-btn {
+    width: 100%;
+  }
+
+  .map-and-list-grid,
+  .chart-grid-3,
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .repeat-rank-card {
+    grid-template-columns: 38px 1fr;
+    border-radius: 20px;
+  }
+
+  .repeat-count-box {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: 48px;
+    flex-direction: row;
+    gap: 4px;
+  }
+
+  .modal {
+    align-items: center;
+    padding: 10px;
+  }
+
+  .modal-box,
+  .modal-box.wide,
+  .modal-box.repeat-list-modal-box,
+  .detail-modal-box,
+  #detailModal .modal-box {
+    width: 100%;
+    max-width: 100%;
+    max-height: 90vh;
+    border-radius: 24px;
+  }
+
+  .modal-head {
+    padding: 18px;
+  }
+
+  .modal-head h3 {
+    font-size: 19px;
+    line-height: 1.3;
+  }
+
+  .detail-mini-grid,
+  .detail-section-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-hero-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .detail-type-badge {
+    width: fit-content;
+  }
+
+  .capture-board {
+    width: 96vw;
+    height: auto;
+    min-height: 70vh;
+  }
 }
