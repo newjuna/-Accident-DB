@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbyXJQyiLMiXmAt426qVga6yJt7MRxNDiy_iTmtd5kbn2WX1MtXdbNDXsiQxFcHWZXa8dg/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1589,96 +1589,240 @@ function renderDataTablePage() {
 }
 
 /* ============ PPT 캡처 전용 모달 동작 ============ */
-function openCaptureMode() {
+async function openCaptureMode() {
   const modal = $('captureModal');
   const body = $('captureBody');
   if (!modal || !body) return;
 
-  const data = state.lastDashboardData;
-  if (!data) {
-    alert('대시보드 데이터를 먼저 조회하세요.');
+  const selectedYear = $('dashYear') ? $('dashYear').value : state.year;
+  const selectedMonth = $('dashMonth') ? $('dashMonth').value : state.month;
+
+  if (!selectedYear || selectedYear === '전체' || !selectedMonth || selectedMonth === '전체') {
+    alert('월례회의 1장 요약은 기준연도와 기준월을 선택한 뒤 생성할 수 있습니다.\n예: 6월 월례회의 자료 → 기준월 5월 선택');
     return;
   }
 
-  modal.classList.remove('hidden');
+  showLoading('월례회의 1장 요약을 만드는 중입니다');
 
-  const k = data.kpi || { total: 0, yoyDiff: 0, yoyBase: 0 };
-  
-  let yoyHtml = '';
-  if (state.year === '전체') {
-    yoyHtml = `<span class="kpi-yoy-val">누적 집계</span><small>전체 연도 총합</small>`;
-  } else if (state.year === state.minYear) {
-    yoyHtml = `<span class="kpi-yoy-val">-</span><small>전년 데이터 없음</small>`;
-  } else if (state.year === state.currentYear) {
-    yoyHtml = `<span class="kpi-yoy-val kpi-counting">전년대비 집계중</span><small>전년 ${k.yoyBase || 0}건</small>`;
-  } else {
-    yoyHtml = `<span class="kpi-yoy-val ${getDiffClass(k.yoyDiff)}">${formatDiff(k.yoyDiff)}</span><small>전년 ${k.yoyBase || 0}건</small>`;
+  try {
+    const currentData = state.lastDashboardData || {};
+    const currentTotal = Number((currentData.kpi || {}).total || 0);
+
+    const monthNum = Number(String(selectedMonth).replace('월', ''));
+    const prevDate = getPreviousYearMonth(selectedYear, selectedMonth);
+    const [prevData, yearTotalData] = await Promise.all([
+      callAPI({
+        action: 'dashboard',
+        division: state.division,
+        year: prevDate.year,
+        month: prevDate.month
+      }),
+      callAPI({
+        action: 'dashboard',
+        division: state.division,
+        year: selectedYear,
+        month: '전체'
+      })
+    ]);
+
+    const prevTotal = Number(((prevData || {}).kpi || {}).total || 0);
+    const monthDiff = currentTotal - prevTotal;
+    const kpi = currentData.kpi || {};
+    const yoyBase = Number(kpi.yoyBase || 0);
+    const yoyDiff = Number(kpi.yoyDiff || (currentTotal - yoyBase));
+    const yearlyTotal = Number(((yearTotalData || {}).kpi || {}).total || 0);
+
+    const charts = currentData.charts || {};
+    const typeRows = (charts.typeCounts || []).filter(r => r.label !== '미분류').slice(0, 5);
+    const deptRows = (charts.deptCounts || []).slice(0, 5);
+    const repeatRows = (currentData.repeatStores || state.repeatRows || []).slice(0, 5);
+
+    const topTypeText = typeRows.length ? `${typeRows[0].label} ${typeRows[0].count}건` : '데이터 없음';
+    const topDeptText = deptRows.length ? `${cleanDeptName(deptRows[0].label)} ${deptRows[0].count}건` : '데이터 없음';
+    const topRepeatText = repeatRows.length ? `${repeatRows[0].store} ${repeatRows[0].count}건` : '반복사고 매장 없음';
+
+    modal.classList.remove('hidden');
+    body.className = 'monthly-report-body';
+    const board = modal.querySelector('.capture-board');
+    if (board) board.classList.add('monthly-report-board');
+
+    body.innerHTML = `
+      <section class="monthly-report-page">
+        <header class="monthly-report-hero">
+          <div>
+            <div class="monthly-kicker">ASUNG DAISO · MONTHLY SAFETY REPORT</div>
+            <h1>${esc(selectedYear)}년 ${esc(selectedMonth)} 산업재해 월례회의 보고</h1>
+            <p>${esc(state.division || '-')} / 기준: ${esc(selectedYear)}.${String(monthNum).padStart(2, '0')}.01 ~ ${esc(selectedYear)}.${String(monthNum).padStart(2, '0')}.${getLastDayOfMonth(selectedYear, monthNum)}</p>
+          </div>
+          <div class="monthly-report-badge">
+            <span>월례회의</span>
+            <strong>1장 요약</strong>
+          </div>
+        </header>
+
+        <section class="monthly-kpi-grid">
+          ${makeMonthlyKpiCard('총 재해 건수', `${currentTotal}건`, '선택 월 발생 건수', '📋', 'kpi-main')}
+          ${makeMonthlyKpiCard('전월 대비', formatMonthlyDiff(monthDiff), `${prevDate.year}년 ${prevDate.month} ${prevTotal}건`, '↔', getMonthlyDiffClass(monthDiff))}
+          ${makeMonthlyKpiCard('전년 동월 대비', formatMonthlyDiff(yoyDiff), `전년 동월 ${yoyBase}건`, '📈', getMonthlyDiffClass(yoyDiff))}
+          ${makeMonthlyKpiCard('연간 누적 현황', `${yearlyTotal}건`, `${selectedYear}년 누적 기준`, '🧾', 'kpi-total')}
+        </section>
+
+        <section class="monthly-main-grid">
+          <div class="monthly-panel">
+            <div class="monthly-panel-head">
+              <span>01</span>
+              <h2>재해유형 TOP 5</h2>
+            </div>
+            ${makeMonthlyBarList(typeRows, 'type')}
+          </div>
+
+          <div class="monthly-panel">
+            <div class="monthly-panel-head">
+              <span>02</span>
+              <h2>영업부별 재해 TOP 5</h2>
+            </div>
+            ${makeMonthlyBarList(deptRows.map(r => ({ ...r, label: cleanDeptName(r.label) })), 'dept')}
+          </div>
+
+          <div class="monthly-panel">
+            <div class="monthly-panel-head">
+              <span>03</span>
+              <h2>반복사고 매장 TOP 5</h2>
+            </div>
+            ${makeMonthlyRepeatList(repeatRows)}
+          </div>
+
+          <div class="monthly-panel monthly-comment-panel">
+            <div class="monthly-panel-head">
+              <span>04</span>
+              <h2>안전보건팀 관리 포인트</h2>
+            </div>
+            ${makeMonthlyCommentList(typeRows, deptRows, repeatRows)}
+          </div>
+        </section>
+
+        <footer class="monthly-report-footer">
+          <div><strong>핵심 요약</strong> 이번 달 최다 재해유형은 <b>${esc(topTypeText)}</b>, 최다 발생 영업부는 <b>${esc(topDeptText)}</b>, 반복사고 주의 매장은 <b>${esc(topRepeatText)}</b>입니다.</div>
+          <div>ASUNG DAISO Safety & Health Team</div>
+        </footer>
+      </section>
+    `;
+
+  } catch (err) {
+    alert('월례회의 1장 요약 생성 오류: ' + (err.message || err));
+  } finally {
+    hideLoading();
   }
+}
 
-  const charts = data.charts || { typeCounts: [], typeCountsYoy: [], deptCounts: [], deptCountsYoy: [] };
-  
-  const topDepts = (charts.deptCounts || []).slice(0, 3);
-  let deptListHtml = '';
-  if (topDepts.length > 0) {
-    deptListHtml = topDepts.map((d, i) => `
-      <div class="kpi-top-item">
-        <span class="top-rank">${i+1}위</span>
-        <span class="top-name">${esc(cleanDeptName(d.label))}</span>
-        <span class="top-count">${d.count}건</span>
-      </div>
-    `).join('');
-  } else {
-    deptListHtml = '<div class="empty-message">데이터 없음</div>';
+function getPreviousYearMonth(year, monthText) {
+  let y = Number(year);
+  let m = Number(String(monthText).replace('월', ''));
+  m -= 1;
+  if (m <= 0) {
+    y -= 1;
+    m = 12;
   }
+  return { year: String(y), month: `${m}월` };
+}
 
-  const topTypes = (charts.typeCounts || []).filter(r => r.label !== '미분류').slice(0, 3);
-  let typeListHtml = '';
-  if (topTypes.length > 0) {
-    typeListHtml = topTypes.map((t, i) => `
-      <div class="kpi-top-item">
-        <span class="top-rank">${i+1}위</span>
-        <span class="top-name">${esc(t.label)}</span>
-        <span class="top-count">${t.count}건</span>
-      </div>
-    `).join('');
-  } else {
-    typeListHtml = '<div class="empty-message">데이터 없음</div>';
+function getLastDayOfMonth(year, monthNum) {
+  return String(new Date(Number(year), Number(monthNum), 0).getDate()).padStart(2, '0');
+}
+
+function formatMonthlyDiff(n) {
+  n = Number(n || 0);
+  if (n > 0) return `▲ ${n}건`;
+  if (n < 0) return `▼ ${Math.abs(n)}건`;
+  return '동일';
+}
+
+function getMonthlyDiffClass(n) {
+  n = Number(n || 0);
+  if (n > 0) return 'kpi-bad';
+  if (n < 0) return 'kpi-good';
+  return 'kpi-neutral';
+}
+
+function makeMonthlyKpiCard(title, value, sub, icon, cls) {
+  return `
+    <article class="monthly-kpi-card ${cls || ''}">
+      <div class="monthly-kpi-icon">${icon}</div>
+      <span>${esc(title)}</span>
+      <strong>${esc(value)}</strong>
+      <small>${esc(sub)}</small>
+    </article>
+  `;
+}
+
+function makeMonthlyBarList(rows, type) {
+  if (!rows || !rows.length) {
+    return '<div class="monthly-empty">해당 월 데이터가 없습니다.</div>';
   }
-
-  body.innerHTML = `
-    <div class="kpi-grid">
-      <div class="kpi-card kpi-card-total">
-        <span>총 재해 건수</span>
-        <strong>${k.total || 0}건</strong>
-        <div class="kpi-yoy-box">${yoyHtml}</div>
-      </div>
-      <div class="kpi-card">
-        <span>영업부별 재해 TOP 3</span>
-        <div class="kpi-top-list">${deptListHtml}</div>
-      </div>
-      <div class="kpi-card">
-        <span>재해유형 TOP 3</span>
-        <div class="kpi-top-list">${typeListHtml}</div>
-      </div>
-    </div>
-    
-    <div class="panel">
-      <h3>재해유형별 건수 (TOP 5)</h3>
-      <div class="chart-container"><canvas id="captureTypeChart"></canvas></div>
-    </div>
-    <div class="panel">
-      <h3>영업부별 재해 건수 (TOP 5)</h3>
-      <div class="chart-container"><canvas id="captureDeptChart"></canvas></div>
+  const max = Math.max(...rows.map(r => Number(r.count || 0)), 1);
+  return `
+    <div class="monthly-bar-list">
+      ${rows.map((r, i) => {
+        const count = Number(r.count || 0);
+        const width = Math.max(8, Math.round((count / max) * 100));
+        return `
+          <div class="monthly-bar-row">
+            <div class="monthly-bar-label">
+              <span>${i + 1}</span>
+              <strong>${esc(r.label || '-')}</strong>
+            </div>
+            <div class="monthly-bar-track">
+              <div class="monthly-bar-fill ${type === 'type' ? 'bar-red' : 'bar-blue'}" style="width:${width}%"></div>
+            </div>
+            <b>${count}건</b>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
+}
 
-  const filteredTypes = (charts.typeCounts || []).filter(r => r.label !== '미분류').slice(0, 5);
-  const filteredTypesYoy = charts.typeCountsYoy || [];
-  drawCaptureChart('captureTypeChart', 'type', filteredTypes, filteredTypesYoy, false);
+function makeMonthlyRepeatList(rows) {
+  if (!rows || !rows.length) {
+    return '<div class="monthly-empty">반복사고 매장이 없습니다.</div>';
+  }
+  return `
+    <div class="monthly-repeat-list">
+      ${rows.map((r, i) => `
+        <div class="monthly-repeat-item ${i === 0 ? 'first' : ''}">
+          <span>${i + 1}</span>
+          <div>
+            <strong>${esc(r.store || '-')}</strong>
+            <small>${esc(cleanDeptName(r.dept || ''))} · ${esc(r.team || '-')} · ${esc(r.topType || '미분류')}</small>
+          </div>
+          <b>${esc(r.count || 0)}건</b>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
 
-  const filteredDepts = (charts.deptCounts || []).slice(0, 5);
-  const filteredDeptsYoy = charts.deptCountsYoy || [];
-  drawCaptureChart('captureDeptChart', 'dept', filteredDepts, filteredDeptsYoy, true);
+function makeMonthlyCommentList(typeRows, deptRows, repeatRows) {
+  const topType = typeRows && typeRows.length ? typeRows[0].label : '주요 재해유형';
+  const topDept = deptRows && deptRows.length ? cleanDeptName(deptRows[0].label) : '발생 상위 영업부';
+  const repeatText = repeatRows && repeatRows.length ? '반복사고 매장 현장 확인 및 개선조치 필요' : '반복사고 매장은 현재 낮은 수준 유지';
+
+  const comments = [
+    `${topType} 사고 예방 중심으로 TBM·작업 전 주의사항을 강화`,
+    `${topDept} 중심으로 사고 발생 원인과 작업동선 재점검`,
+    repeatText
+  ];
+
+  return `
+    <div class="monthly-comment-list">
+      ${comments.map((c, i) => `
+        <div class="monthly-comment-item">
+          <span>${i + 1}</span>
+          <p>${esc(c)}</p>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 function drawCaptureChart(canvasId, chartKey, rows, yoyRows, horizontal) {
