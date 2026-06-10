@@ -1650,3 +1650,71 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
     font-size: 18px;
   }
 }
+
+
+/* ============================================================
+   v14 반복사고 사고 리스트 팝업 색상 보정
+   - 전역 .type-red/.type-green/.type-fall 배경색이 카드 전체에 적용되는 문제 방지
+   - 카드 전체는 흰색/크림톤 유지, 사고유형 색상은 좌측 포인트와 배지에만 적용
+   ============================================================ */
+.repeat-list-modal-box .repeat-accident-card.type-red,
+.repeat-list-modal-box .repeat-accident-card.type-green,
+.repeat-list-modal-box .repeat-accident-card.type-fall,
+.repeat-list-modal-box .repeat-accident-card.type-gray {
+  background: rgba(255,255,255,.96) !important;
+  color: var(--ink) !important;
+}
+
+.repeat-list-modal-box .repeat-accident-card.type-red {
+  border-color: rgba(230,0,51,.14);
+}
+.repeat-list-modal-box .repeat-accident-card.type-green {
+  border-color: rgba(15,163,107,.16);
+}
+.repeat-list-modal-box .repeat-accident-card.type-fall {
+  border-color: rgba(0,59,143,.16);
+}
+.repeat-list-modal-box .repeat-accident-card.type-gray {
+  border-color: rgba(102,112,133,.18);
+}
+
+.repeat-list-modal-box .repeat-accident-card.type-red .repeat-date-icon {
+  background: #fff0f3;
+}
+.repeat-list-modal-box .repeat-accident-card.type-green .repeat-date-icon {
+  background: #ecfdf3;
+}
+.repeat-list-modal-box .repeat-accident-card.type-fall .repeat-date-icon {
+  background: #eef6ff;
+}
+.repeat-list-modal-box .repeat-accident-card.type-gray .repeat-date-icon {
+  background: #f2f4f7;
+}
+
+.repeat-list-modal-box .repeat-accident-card.type-red .repeat-accident-date strong {
+  color: var(--red);
+}
+.repeat-list-modal-box .repeat-accident-card.type-green .repeat-accident-date strong {
+  color: #047857;
+}
+.repeat-list-modal-box .repeat-accident-card.type-fall .repeat-accident-date strong {
+  color: var(--blue);
+}
+.repeat-list-modal-box .repeat-accident-card.type-gray .repeat-accident-date strong {
+  color: #475467;
+}
+
+.repeat-list-modal-box .repeat-accident-card .repeat-accident-store {
+  color: var(--navy) !important;
+}
+
+.repeat-list-modal-box .repeat-accident-card .repeat-accident-foot {
+  color: #475467 !important;
+}
+
+.repeat-list-modal-box .repeat-accident-card .data-type-badge.type-red,
+.repeat-list-modal-box .repeat-accident-card .data-type-badge.type-green,
+.repeat-list-modal-box .repeat-accident-card .data-type-badge.type-fall,
+.repeat-list-modal-box .repeat-accident-card .data-type-badge.type-gray {
+  color: #fff !important;
+}
