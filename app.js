@@ -1,25 +1,19 @@
 /* ============================================================
- *  산업재해 현황 분석 대시보드 v7.0 — 클라이언트
+ *  산업재해 현황 분석 대시보드 v8.0 — 클라이언트
  *
  *  ■ Apps Script 배포 URL을 아래 API_URL에 붙여넣으세요.
- *  ■ 변경사항 v7.0:
- *    - 대시보드 화면 내 미니 반복사고 리스트 패널 제거
- *    - 차트 클릭 시 팝업 띄우는 기능 전면 제거 (차트 클릭 불가 처리)
- *    - 차트 내 데이터라벨 및 축 텍스트 크기 확대 (12px bold)
- *    - 가로 막대 차트 Y축(부서명/팀명) 표시 롤백, X축 수치 스케일 완전 제거
- *    - 로그인 후 병렬 비동기 통신 처리로 로딩 속도 단축
- *    - 데이터 조회: 연도 선택 ➡️ 월 ➡️ 영업부 ➡️ 팀 순서로 드롭다운 순차 동적 생성
- *    - 데이터 조회: 조회 버튼 제거, 드롭다운 변경 시 자동 실시간 쿼리 및 렌더링
- *    - 데이터 조회: 초기화 클릭 시 연도 필터만 남기고 클리어
- *    - 상세 팝업 호출 시의 대기용 로딩 오버레이 팝업 원복
- *    - 반복사고 분포 맵: 2건 이상 발생한 영업부만 맵에 렌더링
- *    - 분포 맵 클릭 시 팝업을 띄우지 않고, 우측의 매장 리스트 테이블을 실시간 필터링 연동
- *    - 로그아웃 테두리 제거 및 붉은색 텍스트 변경
- *    - 로그인 창 로고 중앙 정렬 및 서브 타이틀 문구 제거
+ *  ■ 변경사항 v8.0:
+ *    - 차트 막대 위 datalabels: 금년 건수(예: 46건)로 단순화하여 가독성 개선
+ *    - 차트 툴팁 말풍선 멀티라인 커스텀 연동 (마우스 오버 시 금년/전년/전년대비 증감 표기)
+ *    - 차트 오른쪽/위쪽 잘림 현상 방지를 위해 layout.padding 여백 확보 (가로형 65px, 세로형 25px)
+ *    - 데이터 조회 필터 5단계로 간소화 (연도 ➡️ 월 ➡️ 영업부 ➡️ 팀 ➡️ 매장명 검색)
+ *    - AI 안전진단 조언 탑재: 필터 최종 선택 후 5초 뒤 최다 재해 예방 멘트 동적 연출 (페이드인)
+ *    - 반복사고 매장 상세 팝업 개수 불일치 버그 수정 (선택 연월 필터를 무시하고 최근 1년 전체 데이터 로드)
+ *    - 반복사고 매장 전체 화면 타이틀/서브타이틀 구조 개편
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbw3e3sPlwcdrcEaNes83s-gwWQDOYifzKeqeAR-oazCRhRejSCknkT1xjWk6zYE8dlWmw/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -38,26 +32,24 @@ const state = {
   listRows: [],
   listPage: 1,
   
-  // 데이터 조회 전용 상태 및 순차 필터링용 옵션 백업
+  // 데이터 조회 전용 상태
   dataRows: [],
   dataPage: 1,
-  initFilterData: null, // 초기 필터 정보 캐시
+  initFilterData: null,
   
-  // 데이터 조회 활성 필터 상태
+  // 데이터 조회 활성 필터 상태 (매장, 유형 제거하여 5단계 간소화)
   activeFilters: {
     year: '',
     month: '',
     dept: '전체',
     team: '전체',
-    store: '전체',
-    type: '전체',
     storeSearch: ''
   },
   
-  // 반복사고 영업부별 필터링 상태 (맵 ➡️ 리스트 인터랙티브 연동)
+  // 반복사고 맵 -> 리스트 연동 필터
   selectedRegionFilter: null,
 
-  // 연도 비교 예외용 상태
+  // 연도 비교 예외용
   minYear: null,
   currentYear: String(new Date().getFullYear()),
   lastDashboardData: null,
@@ -67,6 +59,9 @@ const state = {
 
 const PAGE_SIZE_MODAL = 5;
 const PAGE_SIZE_DATA = 10; 
+
+// AI 조언용 5초 타이머 디바운싱용 전역 핸들
+let aiAdviceTimer = null;
 
 /* ============ 유틸리티 ============ */
 function $(id) { return document.getElementById(id); }
@@ -212,13 +207,13 @@ async function login() {
 async function initAfterLogin() {
   showLoading('초기 데이터를 불러오는 중입니다');
   try {
-    // 병렬 비동기 API 통신 처리로 초기화 로딩 지연 극대화 개선
+    // 병렬 통신으로 로그인 후 딜레이 단축
     const [init, dashboardData] = await Promise.all([
       callAPI({ action: 'init', division: state.division }),
       callAPI({ action: 'dashboard', division: state.division, year: String(new Date().getFullYear()), month: '전체' })
     ]);
 
-    state.initFilterData = init; // 데이터 조회 필터링을 위한 원본 백업
+    state.initFilterData = init; 
     state.lastDashboardData = dashboardData;
 
     const years = init.years && init.years.length ? init.years : ['전체', String(new Date().getFullYear())];
@@ -227,20 +222,14 @@ async function initAfterLogin() {
 
     fillSelect($('dashYear'), years, init.defaultYear);
     fillSelect($('dashMonth'), months, '전체');
-
-    state.year = $('dashYear').value;
-    state.month = $('dashMonth').value;
     
-    // 데이터 조회 필터용 기본 연도 백업 (최신 연도로 매칭)
     const numericYears = years.filter(y => y !== '전체');
     if (numericYears.length > 0) {
       state.minYear = numericYears[numericYears.length - 1];
     }
     
-    // 데이터 조회 최초 연도 필터 상태 세팅
     state.activeFilters.year = init.defaultYear;
 
-    // 대시보드 즉시 그리기
     renderDashboard(dashboardData || {});
   } catch (err) {
     alert('초기화 에러: ' + (err.message || err));
@@ -353,7 +342,7 @@ function renderDashboard(data) {
   const emptyDashboard = $('emptyDashboard');
   if (emptyDashboard) emptyDashboard.classList.toggle('hidden', !!data.hasData);
 
-  // 차트 렌더링 (클릭 이벤트 제거, 텍스트 크기 확대, TOP 5 제한)
+  // 차트 렌더링
   const filteredTypes = (charts.typeCounts || []).filter(r => r.label !== '미분류').slice(0, 5);
   const filteredTypesYoy = charts.typeCountsYoy || [];
   drawRankedBarChart('typeChart', 'type', filteredTypes, filteredTypesYoy, false);
@@ -371,12 +360,12 @@ function renderDashboard(data) {
 
   // 반복사고 페이지 데이터 바인딩
   state.repeatRows = data.repeatStores || [];
-  state.selectedRegionFilter = null; // 대시보드 갱신 시 맵 필터 해제
+  state.selectedRegionFilter = null; 
   renderRepeatFull();
   renderRegionMap();
 }
 
-/* ============ 차트 그리기 (v7.0: 클릭 비활성화, 텍스트 크기 확대 12px, 수치 스케일 제거) ============ */
+/* ============ 차트 그리기 (v8.0: 말풍선 툴팁 고도화, 잘림방지 65px 여백 확보, 상시라벨 단순화) ============ */
 function drawRankedBarChart(canvasId, chartKey, rows, yoyRows, horizontal) {
   const canvas = $(canvasId);
   if (!canvas) return;
@@ -391,7 +380,7 @@ function drawRankedBarChart(canvasId, chartKey, rows, yoyRows, horizontal) {
   if (isSingleBar) {
     datasets = [
       {
-        label: '재해건수',
+        label: '금년',
         data: curCounts,
         backgroundColor: rankColors(labels.length),
         borderRadius: 4
@@ -425,42 +414,70 @@ function drawRankedBarChart(canvasId, chartKey, rows, yoyRows, horizontal) {
       indexAxis: horizontal ? 'y' : 'x',
       responsive: true,
       maintainAspectRatio: false,
-      events: [], // 마우스 클릭 및 호버 이벤트를 차단하여 어지러운 호버 반응 및 클릭 팝업 제거
+      // 툴팁 활성화를 위해 마우스 이벤트 처리 복원 (단, onClick 클릭 모달 팝업은 미지정하여 제거)
+      events: ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove'],
+      layout: {
+        padding: {
+          right: horizontal ? 65 : 10, // 가로형 그래프 오른쪽 잘림 방지용 65px 안전 패딩 확보
+          top: horizontal ? 10 : 25   // 세로형 그래프 위쪽 잘림 방지용 25px 안전 패딩 확보
+        }
+      },
       plugins: {
         legend: { display: !isSingleBar, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+        // 마우스 호버 시 말풍선 커스텀 툴팁
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            title: function(context) {
+              return context[0].label;
+            },
+            label: function(context) {
+              const idx = context.dataIndex;
+              const curVal = context.chart.data.datasets[0].data[idx] || 0;
+              const hasYoy = context.chart.data.datasets.length > 1;
+              const yoyVal = hasYoy ? (context.chart.data.datasets[1].data[idx] || 0) : 0;
+              
+              const lines = [`금년: ${curVal}건`];
+              if (hasYoy) {
+                lines.push(`전년: ${yoyVal}건`);
+                const diff = curVal - yoyVal;
+                let diffText = '동일';
+                if (diff > 0) diffText = `▲ ${diff}건 상승`;
+                else if (diff < 0) diffText = `▼ ${Math.abs(diff)}건 하락`;
+                lines.push(`전년대비: ${diffText}`);
+              }
+              return lines;
+            }
+          }
+        },
         datalabels: {
           anchor: 'end',
           align: 'end',
           offset: -2,
-          font: { weight: 'bold', size: 12 }, // 데이터라벨 폰트 크기 확대
+          font: { weight: 'bold', size: 12 }, 
           formatter: function(value, context) {
-            if (!isSingleBar && context.datasetIndex === 0) {
-              const curVal = value;
-              const yoyVal = context.chart.data.datasets[1].data[context.dataIndex] || 0;
-              const diff = curVal - yoyVal;
-              let diffText = '';
-              if (diff > 0) diffText = ` (+${diff})`;
-              else if (diff < 0) diffText = ` (${diff})`;
-              return `${curVal}건${diffText}`;
+            // 막대 위 수치는 깔끔하게 금년 건수만 노출하도록 간소화 (전년도 막대는 지우고 금년 막대에만 건수 표기)
+            if (context.datasetIndex === 0) {
+              return `${value}건`;
             }
-            return `${value}건`;
+            return '';
           },
           color: function(context) {
-            return (isSingleBar || context.datasetIndex === 0) ? '#0f172a' : '#64748b';
+            return context.datasetIndex === 0 ? '#0f172a' : '#64748b';
           }
         }
       },
       scales: {
         x: {
-          display: !horizontal, // 가로형 차트일 땐 하단 숫자스케일(X축) 제거
+          display: !horizontal, 
           grid: { display: false },
-          ticks: { font: { size: 12, weight: 'bold' } } // 텍스트 크기 확대
+          ticks: { font: { size: 12, weight: 'bold' } } 
         },
         y: {
-          display: horizontal, // 가로형 차트일 땐 좌측 이름 레이블(Y축) 노출, 세로형 차트일 땐 수치(Y축) 제거
+          display: horizontal, 
           grid: { display: false },
           beginAtZero: true,
-          ticks: { font: { size: 12, weight: 'bold' } } // Y축 텍스트 크기 확대
+          ticks: { font: { size: 12, weight: 'bold' } } 
         }
       }
     },
@@ -515,13 +532,17 @@ function drawTrendChart(trendData) {
   });
 }
 
-/* ============ 그래프 클릭 팝업 제거로 인해 수동 연동용으로만 사용 ============ */
+/* ============ 수동 리스트 모달 쿼리 (로딩 오버레이 연동 확인) ============ */
 async function openChartList(chartType, label) {
-  showLoading('사고 리스트를 불러오는 중입니다'); // 로딩 오버레이 롤백
+  showLoading('사고 리스트를 불러오는 중입니다'); 
   try {
+    // 반복사고 매장 클릭('store')인 경우, 대시보드 선택 연월에 영향받지 않게 year/month를 '전체'로 쿼리
+    const yr = (chartType === 'store') ? '전체' : state.year;
+    const mth = (chartType === 'store') ? '전체' : state.month;
+
     const res = await callAPI({
       action: 'chartRecords', division: state.division,
-      chartType, label, year: state.year, month: state.month
+      chartType, label, year: yr, month: mth
     });
     state.listRows = (res && res.rows) || [];
     state.listPage = 1;
@@ -566,7 +587,7 @@ function makeRecordTable(rows, clickable) {
 
 /* ============ 사고 상세 팝업 (로딩창 노출 복원) ============ */
 async function openDetail(recordId) {
-  showLoading('사고 상세를 불러오는 중입니다'); // 로딩 오버레이 롤백
+  showLoading('사고 상세를 불러오는 중입니다'); 
   try {
     const res = await callAPI({ action: 'detail', division: state.division, recordId });
     const d = res.detail;
@@ -590,11 +611,10 @@ function closeModals() {
   $('detailModal').classList.add('hidden');
 }
 
-/* ============ 반복사고 매장 전체 리스트 렌더링 (가상 맵 필터 연동 포함) ============ */
+/* ============ 반복사고 매장 전체 리스트 렌더링 ============ */
 function renderRepeatFull() {
   let rows = state.repeatRows || [];
   
-  // 가상 지역 맵 클릭 필터가 켜져 있으면 필터링 처리
   if (state.selectedRegionFilter) {
     rows = rows.filter(r => r.dept === state.selectedRegionFilter);
   }
@@ -609,6 +629,7 @@ function renderRepeatFull() {
     '<th>순위</th><th>매장명</th><th>건수</th><th>주요유형</th>' +
     '<th>최근사고일</th><th>영업부</th><th>팀</th></tr></thead><tbody>';
   rows.forEach((r, i) => {
+    // 매장 클릭 시 상세 리스트 조회를 위해 openChartList('store', 매장명) 호출 연동
     html += '<tr class="clickable" onclick="openChartList(\'store\',\'' + escapeAttr(r.store) + '\')">' +
       '<td>' + (i + 1) + '</td><td>' + esc(r.store) + '</td><td style="color:var(--red); font-weight:bold;">' + r.count + '</td>' +
       '<td>' + esc(r.topType) + '</td><td>' + esc(r.recentDate) + '</td>' +
@@ -618,7 +639,7 @@ function renderRepeatFull() {
   repeatFullList.innerHTML = html;
 }
 
-/* ============ 반복사고 매장: 영업부별 가상 지역 맵 (v7.0: 2건 이상인 영업부만 노출) ============ */
+/* ============ 반복사고 매장: 영업부별 가상 지역 맵 ============ */
 function renderRegionMap() {
   const container = $('visualRegionMap');
   if (!container) return;
@@ -638,7 +659,6 @@ function renderRegionMap() {
     }
   });
 
-  // 누적 건수가 2건 이상인 영업부만 노출하도록 필터링 (반복사고가 실제 발생한 영업부만)
   const activeDepts = standardDepts.filter(d => deptSummary[d] >= 2);
 
   if (activeDepts.length === 0) {
@@ -662,7 +682,6 @@ function renderRegionMap() {
       statusText = '보통';
     }
 
-    // 선택된 지역 맵 카드에 시각적 활성화 테두리 추가
     const isSelected = state.selectedRegionFilter === d ? 'border-color: var(--blue); box-shadow: 0 8px 16px rgba(19,36,90,0.12); transform: translateY(-3px);' : '';
     const shortName = cleanDeptName(d);
 
@@ -674,7 +693,6 @@ function renderRegionMap() {
     `;
   }).join('');
   
-  // 전체보기 초기화 버튼을 가상 지도 하단에 배치
   if (state.selectedRegionFilter) {
     html += `
       <div class="region-card hotspot-safe" style="grid-column: 1/-1; min-height: 48px; border-style: dashed;" onclick="toggleRegionFilter(null)">
@@ -686,12 +704,9 @@ function renderRegionMap() {
   container.innerHTML = html;
 }
 
-/**
- * 가상 지역 맵 카드 클릭 시 우측 테이블 필터링 연동 (토글 식)
- */
 function toggleRegionFilter(dept) {
   if (state.selectedRegionFilter === dept) {
-    state.selectedRegionFilter = null; // 같은 카드를 또 누르면 필터 해제
+    state.selectedRegionFilter = null; 
   } else {
     state.selectedRegionFilter = dept;
   }
@@ -699,7 +714,7 @@ function toggleRegionFilter(dept) {
   renderRegionMap();
 }
 
-/* ============ 페이지 전환 (로딩창 노출 최적화) ============ */
+/* ============ 페이지 전환 ============ */
 function switchView(view) {
   state.currentView = view;
   document.querySelectorAll('.nav[data-view]').forEach(b =>
@@ -710,21 +725,20 @@ function switchView(view) {
   $('repeatPage').classList.toggle('hidden', view !== 'repeat');
   
   if (view === 'data') {
-    // 순차 드롭다운 UI 최초 렌더링
     renderDataFilters();
     renderDataTablePage();
   }
   if (view === 'repeat') {
-    state.selectedRegionFilter = null; // 초기 진입 시 전체 노출
+    state.selectedRegionFilter = null; 
     renderRepeatFull();
     renderRegionMap();
   }
 }
 
-/* ============ 데이터 조회: v7.0 드롭다운 순차 동적 생성 및 자동 실시간 조회 ============ */
+/* ============ 데이터 조회: v8.0 간소화된 5단계 필터 및 AI 안전 보건 조언 멘트 연동 ============ */
 
 /**
- * 동적 필터 렌더링
+ * 5단계 필터 렌더링 (매장 및 유형 제거)
  */
 function renderDataFilters() {
   const container = $('dataFiltersContainer');
@@ -733,7 +747,7 @@ function renderDataFilters() {
   const init = state.initFilterData;
   const f = state.activeFilters;
 
-  // 1. 연도 드롭다운 빌드 (기본 고정 노출)
+  // 1. 연도 (기본 노출)
   let html = `<label>연도<select id="dataYear">`;
   const numericYears = init.years.filter(y => y !== '전체');
   numericYears.forEach(y => {
@@ -741,7 +755,7 @@ function renderDataFilters() {
   });
   html += `</select></label>`;
 
-  // 2. 월 드롭다운 빌드 (연도가 있으면 노출)
+  // 2. 월
   if (f.year) {
     const months = ['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
     html += `<label>월<select id="dataMonth">`;
@@ -751,7 +765,7 @@ function renderDataFilters() {
     html += `</select></label>`;
   }
 
-  // 3. 영업부 드롭다운 빌드 (월이 있으면 노출)
+  // 3. 영업부
   if (f.year && f.month) {
     html += `<label>영업부<select id="filterDept"><option value="전체">전체</option>`;
     (init.departments || []).forEach(d => {
@@ -760,9 +774,8 @@ function renderDataFilters() {
     html += `</select></label>`;
   }
 
-  // 4. 팀 드롭다운 빌드 (영업부를 골랐고, '전체'가 아닐 때 노출)
+  // 4. 팀 (영업부 선택 시 동적 생성)
   if (f.year && f.month && f.dept && f.dept !== '전체') {
-    // 선택된 영업부 기준 소속 팀들만 추출
     const filteredTeams = getFilteredTeams_(f.dept);
     html += `<label>팀<select id="filterTeam"><option value="전체">전체</option>`;
     filteredTeams.forEach(t => {
@@ -771,27 +784,14 @@ function renderDataFilters() {
     html += `</select></label>`;
   }
 
-  // 5. 매장, 유형, 검색인풋 빌드 (팀이 '전체'가 아니거나, 혹은 영업부가 선택된 상태에서 매장단위 좁히기를 위해 노출)
+  // 5. 매장명 검색 (팀까지 렌더링 시 노출)
   if (f.year && f.month && f.dept && f.dept !== '전체') {
-    const filteredStores = getFilteredStores_(f.dept, f.team);
-    html += `<label>매장<select id="filterStore"><option value="전체">전체</option>`;
-    filteredStores.forEach(s => {
-      html += `<option value="${s}" ${String(s) === String(f.store) ? 'selected' : ''}>${s}</option>`;
-    });
-    html += `</select></label>`;
-
-    html += `<label>재해유형<select id="filterType"><option value="전체">전체</option>`;
-    (init.accidentTypes || []).forEach(t => {
-      html += `<option value="${t}" ${String(t) === String(f.type) ? 'selected' : ''}>${t}</option>`;
-    });
-    html += `</select></label>`;
-
     html += `<label>매장명 검색<input id="filterStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력"></label>`;
   }
 
   container.innerHTML = html;
 
-  // 이벤트 핸들러 동적 바인딩 및 자동 실시간 쿼리 연동
+  // 이벤트 핸들러 바인딩 및 자동 실시간 조회 연동
   const selYear = $('dataYear');
   if (selYear) selYear.addEventListener('change', (e) => { f.year = e.target.value; renderDataFilters(); loadDataTable(); });
 
@@ -801,7 +801,7 @@ function renderDataFilters() {
   const selDept = $('filterDept');
   if (selDept) selDept.addEventListener('change', (e) => { 
     f.dept = e.target.value; 
-    f.team = '전체'; f.store = '전체'; // 상위 변경 시 하위 초기화
+    f.team = '전체'; 
     renderDataFilters(); 
     loadDataTable(); 
   });
@@ -809,33 +809,20 @@ function renderDataFilters() {
   const selTeam = $('filterTeam');
   if (selTeam) selTeam.addEventListener('change', (e) => { 
     f.team = e.target.value; 
-    f.store = '전체'; 
     renderDataFilters(); 
     loadDataTable(); 
   });
 
-  const selStore = $('filterStore');
-  if (selStore) selStore.addEventListener('change', (e) => { f.store = e.target.value; loadDataTable(); });
-
-  const selType = $('filterType');
-  if (selType) selType.addEventListener('change', (e) => { f.type = e.target.value; loadDataTable(); });
-
   const txtSearch = $('filterStoreSearch');
   if (txtSearch) {
-    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; });
+    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; triggerAiAdviceTimer(); }); // 타이핑 마다 AI 타이머 재연장
     txtSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDataTable(); });
   }
 }
 
-/**
- * 영업부 소속 팀 필터링 헬퍼
- */
 function getFilteredTeams_(dept) {
-  // 스프레드시트 요청 낭비를 방지하기 위해 로컬 캐시된 대시보드 데이터나 필터 옵션을 기반으로 동적 계산
   const init = state.initFilterData;
-  if (!init || !init.departments) return [];
-  // Code.gs의 조직 맵 정보 혹은 데이터조회 cascade를 대신하여, 영업부에 해당하는 팀들을 데이터에서 매핑하거나 수동 바인딩
-  // 실제 스프레드시트 분석DB에 매칭된 팀 목록을 뽑아주는 API의 cascade 대신 로컬 리스트 데이터 활용
+  if (!init) return [];
   const teams = new Set();
   state.dataRows.forEach(r => {
     if (r.stdDept === dept && r.stdTeam) teams.add(r.stdTeam);
@@ -844,26 +831,11 @@ function getFilteredTeams_(dept) {
 }
 
 /**
- * 영업부 및 팀 소속 매장 필터링 헬퍼
- */
-function getFilteredStores_(dept, team) {
-  const stores = new Set();
-  state.dataRows.forEach(r => {
-    if (r.stdDept === dept) {
-      if (team === '전체' || r.stdTeam === team) {
-        if (r.store) stores.add(r.store);
-      }
-    }
-  });
-  return [...stores].sort();
-}
-
-/**
  * 실시간 자동 쿼리 수행
  */
 async function loadDataTable() {
   const f = state.activeFilters;
-  if (!f.year || !f.month) return; // 필수값 체크
+  if (!f.year || !f.month) return;
 
   showLoading('데이터 조회 중입니다');
   try {
@@ -872,21 +844,101 @@ async function loadDataTable() {
       month: f.month,
       dept: f.dept,
       team: f.team,
-      store: f.store,
-      type: f.type,
+      store: '전체', // API 파라미터는 백엔드 호환성을 위해 고정값 유지
+      type: '전체',
       storeSearch: f.storeSearch
     };
     const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(queryFilters) });
     state.dataRows = res.rows || [];
     state.dataPage = 1;
     renderDataTablePage();
+    
+    // 조회가 끝나면 AI 안전 진단 타이머(5초 디바운스) 작동 시작
+    triggerAiAdviceTimer();
   } catch (err) {
     alert('데이터 조회 오류: ' + (err.message || err));
   } finally { hideLoading(); }
 }
 
 /**
- * 필터 리셋 (v7.0: 연도 필터만 남기고 싹 초기화)
+ * 5초 유휴 시 작동하는 AI 안전 조언 타이머 트리거
+ */
+function triggerAiAdviceTimer() {
+  const adviceBox = $('aiAdviceBox');
+  if (adviceBox) adviceBox.classList.add('hidden'); // 필터 및 입력 조작 중에는 숨김
+
+  clearTimeout(aiAdviceTimer);
+  aiAdviceTimer = setTimeout(() => {
+    generateAiAdvice();
+  }, 5000); // 5초 딜레이
+}
+
+/**
+ * 조회된 조직의 이력을 분석하여 실시간 AI 조언 멘트 카드 출력
+ */
+function generateAiAdvice() {
+  const adviceBox = $('aiAdviceBox');
+  if (!adviceBox) return;
+
+  const f = state.activeFilters;
+  // 영업부가 '전체'이거나 선택되지 않았으면 AI 안내 패널 노출 제외
+  if (!f.dept || f.dept === '전체') {
+    adviceBox.classList.add('hidden');
+    return;
+  }
+
+  const rows = state.dataRows || [];
+  const deptNameClean = cleanDeptName(f.dept);
+  const teamText = (f.team && f.team !== '전체') ? ` ${f.team}` : '';
+  const targetLabel = `${deptNameClean}${teamText}`;
+
+  let adviceHTML = '';
+  
+  if (rows.length === 0) {
+    adviceHTML = `
+      <div class="ai-advice-content">
+        ${targetLabel}은 분석 기간 내 등록된 산업재해 이력이 전혀 없습니다. 
+        매우 우수한 안전 문화를 유지하고 계십니다! 앞으로도 5대 핵심 보건안전 수칙을 준수하여 무재해 일터를 계속해서 이끌어 주십시오.
+      </div>
+    `;
+  } else {
+    // 1. 최다 발생 재해 유형 집계
+    const typeCounts = {};
+    rows.forEach(r => {
+      if (r.accidentType && r.accidentType !== '미분류') {
+        typeCounts[r.accidentType] = (typeCounts[r.accidentType] || 0) + 1;
+      }
+    });
+
+    const sortedTypes = Object.keys(typeCounts).sort((a, b) => typeCounts[b] - typeCounts[a]);
+    const topType = sortedTypes[0]; // 1위 유형
+
+    const adviceRules = {
+      '넘어짐': '바닥의 물기 및 기름기를 발견 즉시 청소하고, 매장 미끄럼 방지 안전화를 필수로 착용하십시오. 작업장 이동 중 휴대폰 사용 및 보행 주시 태만 행동을 차단하여 넘어짐 재해를 완벽히 예방해야 합니다.',
+      '부딪힘': '진열 통로 및 물류 통로에 물건을 적재해 적치선이 좁아지는 것을 단속하고, 모퉁이 반사경 설치와 시설물 모서리 충격방지 쿠션을 보강해 주십시오. 이동 시 전방 시야 확보는 필수입니다.',
+      '물체에 맞음': '낙하물 방지를 위해 물품 고단 적재를 전면 지양하고 하중 지지를 확인해야 합니다. 상하 동시 적재 작업을 절대 금지하고 하단 선반부터 수납하도록 관리해 주십시오.',
+      '떨어짐': 'A형 사다리 사용 시 평탄도를 확인하고 안전 아웃리거를 반드시 고정하며, 2인 1조 감시 체제를 준수해야 합니다. 보호 장구(안전모) 착용을 확인한 후 작업을 승인하십시오.',
+      '끼임': '파쇄기, 자동 포장기 등 동력 전달 기계 정비 및 이물질 청소 시 반드시 1차 전원을 차단(LOTO 차단막 적용)하십시오. 손가락이나 의복이 말려들어 가기 쉬운 회전 부위에는 안전 커버를 필수 장착하십시오.',
+      '베임': '박스 커터나 카톤 커터 조작 시 칼날 노출 길이를 최소화하고 반드시 방검 장갑(Cut-resistant glove)을 양손에 밀착 착용하십시오. 커터 날을 신체 방향으로 당겨 자상을 입는 행동을 통제하십시오.'
+    };
+
+    const adviceSentence = adviceRules[topType] || '작업 전 위험성 평가를 철저히 이행하고, 현장 5대 안전수칙 교육 및 보호구 전면 착용 상태를 수시 감독하여 잠재 위험요소를 차단해 주십시오.';
+
+    adviceHTML = `
+      <div class="ai-advice-content">
+        <strong style="color: var(--red);">${targetLabel}</strong>의 최근 산재 이력을 정밀 분석한 결과, 
+        <strong style="text-decoration: underline;">'${topType}'</strong> 유형의 사고 비중이 가장 높게 나타났습니다. 
+        <br><span style="color: var(--deep); font-size: 13px;">💡 현장 안전 대책:</span> ${adviceSentence}
+      </div>
+    `;
+  }
+
+  adviceBox.innerHTML = adviceHTML;
+  adviceBox.classList.remove('hidden');
+}
+
+/**
+ * 필터 리셋 (v8.0: AI 조언 박스도 숨김)
  */
 async function resetFilters() {
   state.activeFilters = {
@@ -894,17 +946,17 @@ async function resetFilters() {
     month: '',
     dept: '전체',
     team: '전체',
-    store: '전체',
-    type: '전체',
     storeSearch: ''
   };
   state.dataRows = [];
   state.dataPage = 1;
   
-  // 연도만 남기도록 필터 UI 재구성
+  clearTimeout(aiAdviceTimer);
+  const adviceBox = $('aiAdviceBox');
+  if (adviceBox) adviceBox.classList.add('hidden'); // AI 조언 숨김
+
   renderDataFilters();
   
-  // 테이블 결과 초기화
   const resultContainer = $('dataResult');
   if (resultContainer) resultContainer.innerHTML = '';
   const pager = $('dataPager');
@@ -1076,25 +1128,47 @@ function drawCaptureChart(canvasId, chartKey, rows, yoyRows, horizontal) {
       responsive: true,
       maintainAspectRatio: false,
       animation: false, 
-      events: [], // 마우스 이벤트 차단
+      events: ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove'],
+      layout: {
+        padding: {
+          right: horizontal ? 65 : 10,
+          top: horizontal ? 10 : 25
+        }
+      },
       plugins: {
         legend: { display: !isSingleBar, position: 'top', labels: { boxWidth: 10, font: { size: 10 } } },
+        tooltip: {
+          enabled: true,
+          callbacks: {
+            title: function(context) { return context[0].label; },
+            label: function(context) {
+              const idx = context.dataIndex;
+              const curVal = context.chart.data.datasets[0].data[idx] || 0;
+              const hasYoy = context.chart.data.datasets.length > 1;
+              const yoyVal = hasYoy ? (context.chart.data.datasets[1].data[idx] || 0) : 0;
+              const lines = [`금년: ${curVal}건`];
+              if (hasYoy) {
+                lines.push(`전년: ${yoyVal}건`);
+                const diff = curVal - yoyVal;
+                let diffText = '동일';
+                if (diff > 0) diffText = `▲ ${diff}건 상승`;
+                else if (diff < 0) diffText = `▼ ${Math.abs(diff)}건 하락`;
+                lines.push(`전년대비: ${diffText}`);
+              }
+              return lines;
+            }
+          }
+        },
         datalabels: {
           anchor: 'end',
           align: 'end',
           offset: -2,
-          font: { weight: 'bold', size: 12 }, // 텍스트 크기 확대
+          font: { weight: 'bold', size: 12 }, 
           formatter: function(value, context) {
-            if (!isSingleBar && context.datasetIndex === 0) {
-              const curVal = value;
-              const yoyVal = context.chart.data.datasets[1].data[context.dataIndex] || 0;
-              const diff = curVal - yoyVal;
-              let diffText = '';
-              if (diff > 0) diffText = ` (+${diff})`;
-              else if (diff < 0) diffText = ` (${diff})`;
-              return `${curVal}건${diffText}`;
+            if (context.datasetIndex === 0) {
+              return `${value}건`;
             }
-            return `${value}건`;
+            return '';
           },
           color: function(context) {
             return (isSingleBar || context.datasetIndex === 0) ? '#0f172a' : '#64748b';

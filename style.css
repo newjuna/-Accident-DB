@@ -850,3 +850,40 @@ h1 {
   font-size: 14px;
   font-weight: 900;
 }
+
+/* ============ AI 안전보건 조언 카드 스타일 ============ */
+.ai-advice-card {
+  background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  color: #166534;
+  font-size: 14px;
+  line-height: 1.65;
+  box-shadow: 0 4px 15px rgba(22, 101, 52, 0.04);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ai-advice-card::before {
+  content: "💡 AI 안전진단";
+  font-size: 11px;
+  font-weight: 900;
+  background-color: #166534;
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  display: inline-block;
+  margin-top: 2px;
+}
+.ai-advice-content {
+  flex-grow: 1;
+  font-weight: 700;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
