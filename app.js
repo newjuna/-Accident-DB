@@ -19,7 +19,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxqfstgyMvpzvOC843gAXaPNCTHqOfPauBubOVgZj9y_axD9aMF8z9sp6AGYtgISYZnsA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -86,6 +86,8 @@ function hideLoading() {
 }
 
 async function callAPI(params) {
+  // 브라우저 캐싱으로 인한 실시간 갱신 누락 방지 (Cache Busting)
+  params._ = Date.now();
   const query = new URLSearchParams(params).toString();
   const url = API_URL + '?' + query;
   const response = await fetch(url, { redirect: 'follow' });
