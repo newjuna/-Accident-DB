@@ -3375,3 +3375,46 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
     margin-bottom: -316px !important;
   }
 }
+
+
+/* ============================================================
+   SVG 기반 요약 생성 화면
+   - DOM/CSS 캡처 오류 방지
+   - 미리보기와 다운로드 이미지가 동일하게 표시
+   ============================================================ */
+.svg-summary-board {
+  width: min(1360px, 96vw) !important;
+  max-height: 94vh !important;
+  padding: 14px 18px 16px !important;
+  overflow: auto !important;
+  background: #f7f7f7 !important;
+}
+
+.svg-summary-board .capture-foot {
+  display: none !important;
+}
+
+.svg-summary-report-body {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: auto;
+  max-height: calc(94vh - 96px);
+}
+
+.svg-summary-preview-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.svg-summary-preview-wrap img {
+  display: block;
+  width: min(1280px, 100%);
+  height: auto;
+  background: #ffffff;
+  border: 1px solid #d8d8d8;
+  box-shadow: 0 8px 20px rgba(0,0,0,.10);
+}
