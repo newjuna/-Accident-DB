@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwK9zyV2sPmJCzqneVBlefRdzQTlkJVXs_PbY51eSAfr6F7XMCjL4M1x8aX0cTv9wlZ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1598,121 +1598,227 @@ async function openCaptureMode() {
   const selectedMonth = $('dashMonth') ? $('dashMonth').value : state.month;
 
   if (!selectedYear || selectedYear === '전체' || !selectedMonth || selectedMonth === '전체') {
-    alert('월례회의 1장 요약은 기준연도와 기준월을 선택한 뒤 생성할 수 있습니다.\n예: 6월 월례회의 자료 → 기준월 5월 선택');
+    alert('요약 생성은 기준연도와 기준월을 선택한 뒤 실행해 주세요.\n예: 6월 회의 자료 → 기준월 5월 선택');
     return;
   }
 
-  showLoading('월례회의 1장 요약을 만드는 중입니다');
+  showLoading('요약 화면을 만드는 중입니다');
 
   try {
     const currentData = state.lastDashboardData || {};
     const currentTotal = Number((currentData.kpi || {}).total || 0);
-
     const monthNum = Number(String(selectedMonth).replace('월', ''));
     const prevDate = getPreviousYearMonth(selectedYear, selectedMonth);
     const [prevData, yearTotalData] = await Promise.all([
-      callAPI({
-        action: 'dashboard',
-        division: state.division,
-        year: prevDate.year,
-        month: prevDate.month
-      }),
-      callAPI({
-        action: 'dashboard',
-        division: state.division,
-        year: selectedYear,
-        month: '전체'
-      })
+      callAPI({ action: 'dashboard', division: state.division, year: prevDate.year, month: prevDate.month }),
+      callAPI({ action: 'dashboard', division: state.division, year: selectedYear, month: '전체' })
     ]);
 
     const prevTotal = Number(((prevData || {}).kpi || {}).total || 0);
     const monthDiff = currentTotal - prevTotal;
-    const kpi = currentData.kpi || {};
-    const yoyBase = Number(kpi.yoyBase || 0);
-    const yoyDiff = Number(kpi.yoyDiff || (currentTotal - yoyBase));
     const yearlyTotal = Number(((yearTotalData || {}).kpi || {}).total || 0);
 
     const charts = currentData.charts || {};
-    const typeRows = (charts.typeCounts || []).filter(r => r.label !== '미분류').slice(0, 5);
-    const deptRows = (charts.deptCounts || []).slice(0, 5);
-    const repeatRows = (currentData.repeatStores || state.repeatRows || []).slice(0, 5);
+    const typeRows = (charts.typeCounts || []).filter(r => r.label !== '미분류').slice(0, 3);
+    const deptRows = (charts.deptCounts || []).slice(0, 3).map(r => ({ ...r, label: cleanDeptName(r.label) }));
 
-    const topTypeText = typeRows.length ? `${typeRows[0].label} ${typeRows[0].count}건` : '데이터 없음';
-    const topDeptText = deptRows.length ? `${cleanDeptName(deptRows[0].label)} ${deptRows[0].count}건` : '데이터 없음';
-    const topRepeatText = repeatRows.length ? `${repeatRows[0].store} ${repeatRows[0].count}건` : '반복사고 매장 없음';
+    const trendRows = currentData.yearlyTrend || [];
+    const currentTrend = trendRows.find(r => String(r.year) === String(selectedYear)) || trendRows[trendRows.length - 1] || { months: [] };
+    const previousTrend = trendRows.find(r => String(r.year) === String(Number(selectedYear) - 1)) || { months: [] };
+
+    const monthlyValues = Array.from({ length: 12 }, (_, i) => Number((currentTrend.months || [])[i] || 0));
+    const referenceValues = Array.from({ length: 12 }, (_, i) => Number((previousTrend.months || [])[i] || 0));
+
+    const combinedValues = monthlyValues.map((v, i) => {
+      if (i + 1 <= monthNum) return v;
+      return referenceValues[i] || 0;
+    });
+
+    const maxValue = Math.max(1, ...combinedValues, currentTotal, prevTotal);
+    const topType = typeRows.length ? `${typeRows[0].label} ${typeRows[0].count}건` : '데이터 없음';
+    const topDept = deptRows.length ? `${deptRows[0].label} ${deptRows[0].count}건` : '데이터 없음';
 
     modal.classList.remove('hidden');
-    body.className = 'monthly-report-body';
+    body.className = 'summary-report-body';
     const board = modal.querySelector('.capture-board');
-    if (board) board.classList.add('monthly-report-board');
+    if (board) {
+      board.classList.remove('monthly-report-board');
+      board.classList.add('summary-report-board');
+    }
 
     body.innerHTML = `
-      <section class="monthly-report-page">
-        <header class="monthly-report-hero">
-          <div>
-            <div class="monthly-kicker">ASUNG DAISO · MONTHLY SAFETY REPORT</div>
-            <h1>${esc(selectedYear)}년 ${esc(selectedMonth)} 산업재해 월례회의 보고</h1>
+      <section id="summaryReportPage" class="summary-report-page">
+        <div class="summary-bg-overlay"></div>
+        <header class="summary-header">
+          <div class="summary-title-wrap">
+            <h1>${esc(selectedYear)}년 ${esc(selectedMonth)} 산업재해 <span>현황</span></h1>
             <p>${esc(state.division || '-')} / 기준: ${esc(selectedYear)}.${String(monthNum).padStart(2, '0')}.01 ~ ${esc(selectedYear)}.${String(monthNum).padStart(2, '0')}.${getLastDayOfMonth(selectedYear, monthNum)}</p>
           </div>
-          <div class="monthly-report-badge">
-            <span>월례회의</span>
-            <strong>1장 요약</strong>
-          </div>
+          <div class="summary-logo-wrap"><img src="logo.png" alt="ASUNG DAISO"></div>
         </header>
 
-        <section class="monthly-kpi-grid">
-          ${makeMonthlyKpiCard('총 재해 건수', `${currentTotal}건`, '선택 월 발생 건수', '📋', 'kpi-main')}
-          ${makeMonthlyKpiCard('전월 대비', formatMonthlyDiff(monthDiff), `${prevDate.year}년 ${prevDate.month} ${prevTotal}건`, '↔', getMonthlyDiffClass(monthDiff))}
-          ${makeMonthlyKpiCard('전년 동월 대비', formatMonthlyDiff(yoyDiff), `전년 동월 ${yoyBase}건`, '📈', getMonthlyDiffClass(yoyDiff))}
-          ${makeMonthlyKpiCard('연간 누적 현황', `${yearlyTotal}건`, `${selectedYear}년 누적 기준`, '🧾', 'kpi-total')}
+        <section class="summary-kpi-row">
+          ${makeSummaryKpiCard('총 재해', `${currentTotal}건`, `<small>전월 대비 ${formatMonthlyDiff(monthDiff)}</small>`, 'shield')}
+          ${makeSummaryKpiCard('전월 대비', `${formatMonthlyDiff(monthDiff)}`, `<small>${prevDate.year}년 ${prevDate.month} ${prevTotal}건</small>`, 'down')}
+          ${makeSummaryKpiCard('연간 누적', `${yearlyTotal}건`, `<small>${selectedYear}년 누적 기준</small>`, 'growth')}
         </section>
 
-        <section class="monthly-main-grid">
-          <div class="monthly-panel">
-            <div class="monthly-panel-head">
-              <span>01</span>
-              <h2>재해유형 TOP 5</h2>
+        <section class="summary-main-grid">
+          <div class="summary-panel summary-trend-panel">
+            <div class="summary-panel-title">${esc(selectedYear)}년 월별 재해 발생 추이</div>
+            <div class="summary-trend-chart">
+              <div class="summary-y-axis">
+                ${makeSummaryYAxis(maxValue)}
+              </div>
+              <div class="summary-bars-zone">
+                <div class="summary-bars-area">
+                  ${monthlyValues.map((v, i) => makeSummaryBar(i + 1, i + 1 <= monthNum ? v : referenceValues[i], maxValue, i + 1 === monthNum ? 'current' : (i + 1 < monthNum ? 'actual' : 'reference'))).join('')}
+                  <svg class="summary-trend-line" viewBox="0 0 900 240" preserveAspectRatio="none">
+                    <polyline points="${makeSummaryTrendPoints(monthlyValues.slice(0, monthNum), maxValue, monthNum)}" fill="none" stroke="#ff1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 9"></polyline>
+                    ${makeSummaryTrendDots(monthlyValues.slice(0, monthNum), maxValue, monthNum)}
+                  </svg>
+                </div>
+                <div class="summary-bar-legend"><span class="legend-box navy"></span>실적 <span class="legend-dotted"></span>추세선 <span class="legend-box gray"></span>과거건수</div>
+              </div>
             </div>
-            ${makeMonthlyBarList(typeRows, 'type')}
           </div>
 
-          <div class="monthly-panel">
-            <div class="monthly-panel-head">
-              <span>02</span>
-              <h2>영업부별 재해 TOP 5</h2>
-            </div>
-            ${makeMonthlyBarList(deptRows.map(r => ({ ...r, label: cleanDeptName(r.label) })), 'dept')}
-          </div>
-
-          <div class="monthly-panel">
-            <div class="monthly-panel-head">
-              <span>03</span>
-              <h2>반복사고 매장 TOP 5</h2>
-            </div>
-            ${makeMonthlyRepeatList(repeatRows)}
-          </div>
-
-          <div class="monthly-panel monthly-comment-panel">
-            <div class="monthly-panel-head">
-              <span>04</span>
-              <h2>안전보건팀 관리 포인트</h2>
-            </div>
-            ${makeMonthlyCommentList(typeRows, deptRows, repeatRows)}
+          <div class="summary-panel summary-donut-panel">
+            <div class="summary-panel-title">재해유형 비중</div>
+            ${makeSummaryDonut(typeRows, charts.typeCounts || [])}
           </div>
         </section>
 
-        <footer class="monthly-report-footer">
-          <div><strong>핵심 요약</strong> 이번 달 최다 재해유형은 <b>${esc(topTypeText)}</b>, 최다 발생 영업부는 <b>${esc(topDeptText)}</b>, 반복사고 주의 매장은 <b>${esc(topRepeatText)}</b>입니다.</div>
-          <div>ASUNG DAISO Safety & Health Team</div>
-        </footer>
+        <section class="summary-bottom-grid">
+          <div class="summary-panel summary-list-panel">
+            <div class="summary-panel-title">재해유형 TOP 3</div>
+            ${makeSummaryTopList(typeRows, 'type')}
+          </div>
+          <div class="summary-panel summary-list-panel">
+            <div class="summary-panel-title">영업부별 재해 TOP 3</div>
+            ${makeSummaryTopList(deptRows, 'dept')}
+          </div>
+          <div class="summary-panel summary-point-panel">
+            <div class="summary-panel-title point-title">핵심 포인트</div>
+            <div class="summary-point-list">
+              <div>• 전월 대비 재해 <b>${esc(String(Math.abs(monthDiff)))}건 ${monthDiff <= 0 ? '감소' : '증가'}</b></div>
+              <div>• 최다 재해유형은 <b>${esc(typeRows[0] ? typeRows[0].label : '-')}</b></div>
+              <div>• 집중관리 영업부 <b>${esc(deptRows[0] ? deptRows[0].label : '-')}</b></div>
+            </div>
+          </div>
+        </section>
       </section>
     `;
-
   } catch (err) {
-    alert('월례회의 1장 요약 생성 오류: ' + (err.message || err));
+    alert('요약 생성 오류: ' + (err.message || err));
   } finally {
     hideLoading();
   }
+}
+
+function makeSummaryKpiCard(title, value, subHtml, iconType) {
+  return `
+    <div class="summary-kpi-card">
+      <div class="summary-kpi-icon ${iconType}">${getSummaryIconSvg(iconType)}</div>
+      <div class="summary-kpi-text">
+        <span>${esc(title)}</span>
+        <strong>${esc(value)}</strong>
+        ${subHtml || ''}
+      </div>
+    </div>
+  `;
+}
+
+function getSummaryIconSvg(type) {
+  if (type === 'shield') {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><path fill="#ff1a1a" d="M32 6l18 6v15c0 12-7 22-18 29C21 49 14 39 14 27V12l18-6z"></path><path fill="#fff" d="M28 18h8v10h10v8H36v10h-8V36H18v-8h10z"></path></svg>';
+  }
+  if (type === 'down') {
+    return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#0a2f7d"></circle><path fill="#fff" d="M28 14h8v22h10L32 50 18 36h10z"></path></svg>';
+  }
+  return '<svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="30" fill="#0a2f7d"></circle><rect x="16" y="34" width="8" height="14" rx="1" fill="#fff"></rect><rect x="28" y="26" width="8" height="22" rx="1" fill="#fff"></rect><rect x="40" y="18" width="8" height="30" rx="1" fill="#fff"></rect><path d="M18 22l10-8 8 7 11-11" stroke="#fff" stroke-width="3" fill="none"></path></svg>';
+}
+
+function makeSummaryYAxis(maxValue) {
+  const step = Math.max(1, Math.ceil(maxValue / 5));
+  const top = step * 5;
+  return [top, top - step, top - step * 2, top - step * 3, top - step * 4, 0].map(v => `<span>${v}</span>`).join('');
+}
+
+function makeSummaryBar(month, value, maxValue, kind) {
+  const pct = Math.max(4, Math.round((Number(value || 0) / Math.max(1, maxValue)) * 100));
+  const cls = kind === 'current' ? 'current' : (kind === 'reference' ? 'reference' : 'actual');
+  return `
+    <div class="summary-bar-col ${cls}">
+      <span class="summary-bar-value">${esc(value || 0)}</span>
+      <div class="summary-bar-track"><div class="summary-bar-fill ${cls}" style="height:${pct}%"></div></div>
+      <label>${month}월</label>
+    </div>
+  `;
+}
+
+function makeSummaryTrendPoints(values, maxValue, count) {
+  if (!values.length) return '';
+  const width = 900;
+  const height = 240;
+  const xGap = count > 1 ? width / (count - 1) : width;
+  return values.map((v, i) => {
+    const x = count > 1 ? i * xGap : width / 2;
+    const y = height - (Number(v || 0) / Math.max(1, maxValue)) * (height - 20) - 10;
+    return `${x},${Math.max(10, y)}`;
+  }).join(' ');
+}
+
+function makeSummaryTrendDots(values, maxValue, count) {
+  if (!values.length) return '';
+  const width = 900;
+  const height = 240;
+  const xGap = count > 1 ? width / (count - 1) : width;
+  return values.map((v, i) => {
+    const x = count > 1 ? i * xGap : width / 2;
+    const y = height - (Number(v || 0) / Math.max(1, maxValue)) * (height - 20) - 10;
+    return `<circle cx="${x}" cy="${Math.max(10, y)}" r="7" fill="#ff1a1a"></circle>`;
+  }).join('');
+}
+
+function makeSummaryDonut(topRows, allRows) {
+  const rows = (allRows || []).filter(r => r.label !== '미분류');
+  const baseRows = rows.length ? rows : topRows;
+  const total = Math.max(1, baseRows.reduce((sum, r) => sum + Number(r.count || 0), 0));
+  const colors = ['#0b2f86', '#ff1620', '#a9a9a9', '#d9d9d9', '#efefef'];
+  let acc = 0;
+  const stops = baseRows.slice(0, 5).map((r, i) => {
+    const start = acc;
+    const pct = (Number(r.count || 0) / total) * 100;
+    acc += pct;
+    return `${colors[i]} ${start.toFixed(1)}% ${acc.toFixed(1)}%`;
+  });
+  if (acc < 100) stops.push(`#f3f4f6 ${acc.toFixed(1)}% 100%`);
+  return `
+    <div class="summary-donut-wrap">
+      <div class="summary-donut" style="background: conic-gradient(${stops.join(', ')})">
+        <div class="summary-donut-center">주요<br>유형</div>
+      </div>
+      <div class="summary-donut-legend">
+        ${baseRows.slice(0, 5).map((r, i) => `<div><span class="dot" style="background:${colors[i]}"></span><label>${esc(r.label)}</label><b>${((Number(r.count||0)/total)*100).toFixed(1)}%</b></div>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function makeSummaryTopList(rows, kind) {
+  if (!rows || !rows.length) return '<div class="summary-empty">데이터 없음</div>';
+  const total = Math.max(1, rows.reduce((sum, r) => sum + Number(r.count || 0), 0));
+  const colors = kind === 'type' ? ['#0b2f86', '#ff1620', '#a9a9a9'] : ['#0b2f86', '#ff1620', '#a9a9a9'];
+  const max = Math.max(1, ...rows.map(r => Number(r.count || 0)));
+  return `
+    <div class="summary-top-list">
+      ${rows.slice(0, 3).map((r, i) => {
+        const pct = Math.max(12, Math.round((Number(r.count || 0) / max) * 100));
+        return `<div class="summary-top-item"><span class="rank" style="background:${colors[i]}">${i + 1}</span><label>${esc(r.label)}</label><div class="bar"><i style="width:${pct}%; background:${colors[i]}"></i></div><b>${esc(r.count)}건 (${((Number(r.count||0)/total)*100).toFixed(1)}%)</b></div>`;
+      }).join('')}
+    </div>
+  `;
 }
 
 function getPreviousYearMonth(year, monthText) {
@@ -1926,6 +2032,10 @@ function drawCaptureChart(canvasId, chartKey, rows, yoyRows, horizontal) {
 function closeCaptureMode() {
   const modal = $('captureModal');
   if (modal) modal.classList.add('hidden');
+  const board = modal ? modal.querySelector('.capture-board') : null;
+  if (board) { board.classList.remove('monthly-report-board'); board.classList.remove('summary-report-board'); }
+  const body = $('captureBody');
+  if (body) body.className = 'capture-body-grid';
   
   ['type', 'dept'].forEach(k => {
     if (state.captureCharts[k]) {
@@ -1936,34 +2046,32 @@ function closeCaptureMode() {
 }
 
 async function downloadCaptureImage() {
-  const board = document.querySelector('.capture-board');
-  if (!board) return;
+  const target = document.querySelector('#summaryReportPage') || document.querySelector('.capture-board');
+  if (!target) return;
 
   showLoading('이미지 파일 생성 중입니다...');
 
   try {
-    board.classList.add('capturing');
+    target.classList.add('capturing');
 
-    const canvas = await html2canvas(board, {
-      scale: 2, 
+    const canvas = await html2canvas(target, {
+      scale: 2,
       backgroundColor: '#ffffff',
       useCORS: true,
       logging: false
     });
 
     const imgData = canvas.toDataURL('image/png');
-
     const link = document.createElement('a');
     link.href = imgData;
-    link.download = `산업재해_현황_분석_보고서_${state.year}년_${state.month}.png`;
+    link.download = `산업재해_현황_요약_${state.year}년_${state.month}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
   } catch (err) {
     alert('이미지 다운로드 중 오류 발생: ' + (err.message || err));
   } finally {
-    board.classList.remove('capturing');
+    target.classList.remove('capturing');
     hideLoading();
   }
 }
