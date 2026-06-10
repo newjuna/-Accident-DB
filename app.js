@@ -14,7 +14,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxkJ98XNaLD7GW-ToGUEu7NPlB9-VkbtzCQ0QQMa7miiF1nyXU9yonu0QKh97q_XxvZkA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -32,6 +32,7 @@ const state = {
   repeatRows: [],
   listRows: [],
   listPage: 1,
+  listModalMode: 'table', // 반복사고 매장 팝업만 카드형으로 표시하기 위한 상태
   
   // 데이터 조회 전용 상태 및 순차 필터링용 옵션 백업
   dataRows: [],
@@ -536,7 +537,17 @@ async function openChartList(chartType, label) {
     });
     state.listRows = (res && res.rows) || [];
     state.listPage = 1;
+
+    // v14 기준 유지: 반복사고 매장(store)에서 열린 사고 리스트 팝업만 카드형으로 표시
+    state.listModalMode = (chartType === 'store') ? 'repeatStoreCards' : 'table';
     $('listModalTitle').textContent = cleanDeptName(label || '') + ' 사고 리스트 (' + state.listRows.length + '건)';
+
+    const listModal = $('listModal');
+    const listModalBox = listModal ? listModal.querySelector('.modal-box') : null;
+    if (listModalBox) {
+      listModalBox.classList.toggle('repeat-list-modal-box', state.listModalMode === 'repeatStoreCards');
+    }
+
     renderListModalPage();
     $('listModal').classList.remove('hidden');
   } catch (err) {
@@ -552,7 +563,49 @@ function renderListModalPage() {
   const listPageInfo = $('listPageInfo');
   if (listPageInfo) listPageInfo.textContent = state.listPage + ' / ' + max;
   const listModalBody = $('listModalBody');
-  if (listModalBody) listModalBody.innerHTML = makeRecordTable(pageRows, true);
+  if (!listModalBody) return;
+
+  if (state.listModalMode === 'repeatStoreCards') {
+    listModalBody.innerHTML = makeRepeatStoreAccidentCards(pageRows);
+  } else {
+    listModalBody.innerHTML = makeRecordTable(pageRows, true);
+  }
+}
+
+function makeRepeatStoreAccidentCards(rows) {
+  if (!rows || !rows.length) return '<div class="empty-message">조회된 사고가 없습니다.</div>';
+
+  const first = rows[0] || {};
+  const metaHtml = `
+    <div class="repeat-modal-meta-row">
+      ${first.stdDept ? `<span>${esc(cleanDeptName(first.stdDept))}</span>` : ''}
+      ${first.stdTeam ? `<span>${esc(first.stdTeam)}</span>` : ''}
+    </div>
+  `;
+
+  const cards = rows.map(r => {
+    const typeClass = getAccidentTypeClass(r.accidentType);
+    return `
+      <article class="repeat-accident-card ${typeClass}" onclick="openDetail('${escapeAttr(r.recordId)}')">
+        <div class="repeat-accident-head">
+          <div class="repeat-accident-date">
+            <span class="repeat-date-icon">📅</span>
+            <strong>${esc(r.accidentDate || '-')}</strong>
+          </div>
+          <span class="data-type-badge ${typeClass}">${esc(r.accidentType || '미분류')}</span>
+        </div>
+        <div class="repeat-accident-store">${esc(r.store || '-')}</div>
+        <div class="repeat-accident-content">${esc(r.accidentContent || '-')}</div>
+        <div class="repeat-accident-foot">
+          <span>🏬 ${esc(cleanDeptName(r.stdDept || '-'))}</span>
+          <span>•</span>
+          <span>👤 ${esc(r.stdTeam || '-')}</span>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  return `<div class="repeat-modal-card-wrap">${metaHtml}<div class="repeat-accident-card-list">${cards}</div></div>`;
 }
 
 function makeRecordTable(rows, clickable) {
@@ -709,6 +762,9 @@ window.openDetail = openDetail;
 function closeModals() {
   $('listModal').classList.add('hidden');
   $('detailModal').classList.add('hidden');
+  state.listModalMode = 'table';
+  const listModalBox = $('listModal') ? $('listModal').querySelector('.modal-box') : null;
+  if (listModalBox) listModalBox.classList.remove('repeat-list-modal-box');
 }
 
 /* ============ 반복사고 매장 전체 리스트 렌더링 (가상 맵 필터 연동 포함) ============ */
