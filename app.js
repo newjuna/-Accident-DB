@@ -1,25 +1,18 @@
 /* ============================================================
- *  산업재해 현황 분석 대시보드 v7.0 — 클라이언트
+ *  산업재해 현황 분석 대시보드 v13.0 — 클라이언트
  *
- *  ■ Apps Script 배포 URL을 아래 API_URL에 붙여넣으세요.
- *  ■ 변경사항 v7.0:
- *    - 대시보드 화면 내 미니 반복사고 리스트 패널 제거
- *    - 차트 클릭 시 팝업 띄우는 기능 전면 제거 (차트 클릭 불가 처리)
- *    - 차트 내 데이터라벨 및 축 텍스트 크기 확대 (12px bold)
- *    - 가로 막대 차트 Y축(부서명/팀명) 표시 롤백, X축 수치 스케일 완전 제거
- *    - 로그인 후 병렬 비동기 통신 처리로 로딩 속도 단축
- *    - 데이터 조회: 연도 선택 ➡️ 월 ➡️ 영업부 ➡️ 팀 순서로 드롭다운 순차 동적 생성
- *    - 데이터 조회: 조회 버튼 제거, 드롭다운 변경 시 자동 실시간 쿼리 및 렌더링
- *    - 데이터 조회: 초기화 클릭 시 연도 필터만 남기고 클리어
- *    - 상세 팝업 호출 시의 대기용 로딩 오버레이 팝업 원복
- *    - 반복사고 분포 맵: 2건 이상 발생한 영업부만 맵에 렌더링
- *    - 분포 맵 클릭 시 팝업을 띄우지 않고, 우측의 매장 리스트 테이블을 실시간 필터링 연동
- *    - 로그아웃 테두리 제거 및 붉은색 텍스트 변경
- *    - 로그인 창 로고 중앙 정렬 및 서브 타이틀 문구 제거
+ *  ■ 기준: 사용자가 제공한 최신 index.html / style.css / app.js 구조 유지
+ *  ■ Apps Script 배포 URL은 아래 API_URL 값을 사용합니다.
+ *  ■ 변경사항 v13.0:
+ *    - 기존 데이터 조회·대시보드·반복사고 조회 기능 유지
+ *    - 사고 상세보기 팝업을 플레이풀 카드형 디자인으로 개선
+ *    - 데이터 조회 결과를 카드형 리스트로 개선
+ *    - 반복사고 매장 리스트를 랭킹 카드형으로 개선
+ *    - 과거 버전 주석을 v13 기준으로 정리
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxkJ98XNaLD7GW-ToGUEu7NPlB9-VkbtzCQ0QQMa7miiF1nyXU9yonu0QKh97q_XxvZkA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -381,7 +374,7 @@ function renderDashboard(data) {
   renderRegionMap();
 }
 
-/* ============ 차트 그리기 (v7.0: 클릭 비활성화, 텍스트 크기 확대 12px, 수치 스케일 제거) ============ */
+/* ============ 차트 그리기 (v13.0: 클릭 비활성화, 텍스트 크기 확대 12px, 수치 스케일 제거) ============ */
 function drawRankedBarChart(canvasId, chartKey, rows, yoyRows, horizontal) {
   const canvas = $(canvasId);
   if (!canvas) return;
@@ -578,19 +571,129 @@ function makeRecordTable(rows, clickable) {
   return html;
 }
 
-/* ============ 사고 상세 팝업 (로딩창 노출 복원) ============ */
+function detailVal(d, key) {
+  const v = d ? d[key] : '';
+  return (v === undefined || v === null || String(v).trim() === '') ? '-' : String(v);
+}
+
+function getAccidentTypeClass(type) {
+  const t = String(type || '');
+  if (/넘어|미끄|전도|추락|낙상/.test(t)) return 'type-fall';
+  if (/끼임|절단|베임|찔림|부딪|협착|화상|충돌/.test(t)) return 'type-red';
+  if (/근골|요통|염좌|무리|통증|삐끗/.test(t)) return 'type-green';
+  return 'type-gray';
+}
+
+function makeDetailMiniCard(icon, label, value) {
+  return `
+    <div class="detail-mini-card">
+      <div class="detail-mini-icon">${icon}</div>
+      <div>
+        <span>${esc(label)}</span>
+        <strong>${esc(value)}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function makeDetailRow(icon, label, value) {
+  return `
+    <div class="detail-row">
+      <span class="detail-row-label"><i>${icon}</i>${esc(label)}</span>
+      <strong>${esc(value)}</strong>
+    </div>
+  `;
+}
+
+function makeDataCardList(rows) {
+  if (!rows || !rows.length) return '<div class="empty-message">조회된 사고가 없습니다.</div>';
+
+  let html = '<div class="data-card-list">';
+  rows.forEach((r, i) => {
+    const typeClass = getAccidentTypeClass(r.accidentType);
+    html += `
+      <article class="data-record-card" onclick="openDetail('${escapeAttr(r.recordId)}')">
+        <div class="data-record-left">
+          <div class="data-record-store-icon">🏬</div>
+          <div>
+            <div class="data-record-date">${esc(r.accidentDate || '-')}</div>
+            <div class="data-record-store">${esc(r.store || '-')}</div>
+            <div class="data-record-org">${esc(cleanDeptName(r.stdDept))} · ${esc(r.stdTeam || '-')}</div>
+          </div>
+        </div>
+        <div class="data-record-content">
+          <span class="data-type-badge ${typeClass}">${esc(r.accidentType || '미분류')}</span>
+          <p>${esc(shorten(r.accidentContent, 110))}</p>
+        </div>
+        <button class="data-detail-btn" type="button">상세보기</button>
+      </article>
+    `;
+  });
+  html += '</div>';
+  return html;
+}
+
+/* ============ 사고 상세 팝업 (v13.0 플레이풀 카드형 디자인) ============ */
 async function openDetail(recordId) {
-  showLoading('사고 상세를 불러오는 중입니다'); // 로딩 오버레이 롤백
+  showLoading('사고 상세를 불러오는 중입니다');
   try {
     const res = await callAPI({ action: 'detail', division: state.division, recordId });
-    const d = res.detail;
-    let html = '<dl class="detail-grid">';
-    ['재해일자', '영업부', '팀', '매장명', '재해자명', '사번', '재해유형', '기인물'].forEach(k => {
-      let val = d[k];
-      if (k === '영업부') val = cleanDeptName(val);
-      html += '<dt>' + k + '</dt><dd style="color: #000000 !important;">' + esc(val) + '</dd>';
-    });
-    html += '<dt>사고내용</dt><dd class="accident-content">' + esc(d['사고내용']) + '</dd></dl>';
+    const d = res.detail || {};
+
+    const accidentDate = detailVal(d, '재해일자');
+    const dept = cleanDeptName(detailVal(d, '영업부'));
+    const team = detailVal(d, '팀');
+    const store = detailVal(d, '매장명');
+    const victim = detailVal(d, '재해자명');
+    const employeeNo = detailVal(d, '사번');
+    const accidentType = detailVal(d, '재해유형');
+    const cause = detailVal(d, '기인물');
+    const accidentContent = detailVal(d, '사고내용');
+    const typeClass = getAccidentTypeClass(accidentType);
+
+    const html = `
+      <div class="detail-playful">
+        <div class="detail-sticker">사고</div>
+
+        <section class="detail-hero-card">
+          <div class="detail-hero-title">
+            <div class="detail-hero-icon">📋</div>
+            <div>
+              <h4>사고 상세보기</h4>
+              <p>${esc(accidentDate)} · ${esc(dept)} · ${esc(team)} · ${esc(store)}</p>
+            </div>
+          </div>
+          <span class="detail-type-badge ${typeClass}">${esc(accidentType)}</span>
+        </section>
+
+        <section class="detail-mini-grid">
+          ${makeDetailMiniCard('📅', '재해일자', accidentDate)}
+          ${makeDetailMiniCard('🏬', '매장명', store)}
+          ${makeDetailMiniCard('👥', '팀', team)}
+          ${makeDetailMiniCard('🏢', '영업부', dept)}
+        </section>
+
+        <section class="detail-section-grid">
+          <div class="detail-paper-card person-card">
+            <h5><span>👤</span> 인적 정보</h5>
+            ${makeDetailRow('👤', '재해자명', victim)}
+            ${makeDetailRow('🪪', '사번', employeeNo)}
+          </div>
+
+          <div class="detail-paper-card type-card">
+            <h5><span>⚠️</span> 사고 분류</h5>
+            ${makeDetailRow('⚠️', '재해유형', accidentType)}
+            ${makeDetailRow('📦', '기인물', cause)}
+          </div>
+        </section>
+
+        <section class="detail-paper-card accident-card">
+          <h5><span>📝</span> 사고 내용</h5>
+          <div class="detail-accident-content">${esc(accidentContent)}</div>
+        </section>
+      </div>
+    `;
+
     $('detailBody').innerHTML = html;
     $('detailModal').classList.remove('hidden');
   } catch (err) {
@@ -607,7 +710,7 @@ function closeModals() {
 /* ============ 반복사고 매장 전체 리스트 렌더링 (가상 맵 필터 연동 포함) ============ */
 function renderRepeatFull() {
   let rows = state.repeatRows || [];
-  
+
   // 가상 지역 맵 클릭 필터가 켜져 있으면 필터링 처리
   if (state.selectedRegionFilter) {
     rows = rows.filter(r => r.dept === state.selectedRegionFilter);
@@ -619,20 +722,34 @@ function renderRepeatFull() {
     repeatFullList.innerHTML = '<div class="empty-message">조건에 맞는 반복사고 매장이 없습니다.</div>';
     return;
   }
-  let html = '<table><thead><tr>' +
-    '<th>순위</th><th>매장명</th><th>건수</th><th>주요유형</th>' +
-    '<th>최근사고일</th><th>영업부</th><th>팀</th></tr></thead><tbody>';
+
+  let html = '<div class="repeat-rank-list">';
   rows.forEach((r, i) => {
-    html += '<tr class="clickable" onclick="openChartList(\'store\',\'' + escapeAttr(r.store) + '\')">' +
-      '<td>' + (i + 1) + '</td><td>' + esc(r.store) + '</td><td style="color:var(--red); font-weight:bold;">' + r.count + '</td>' +
-      '<td>' + esc(r.topType) + '</td><td>' + esc(r.recentDate) + '</td>' +
-      '<td>' + esc(cleanDeptName(r.dept)) + '</td><td>' + esc(r.team) + '</td></tr>';
+    const typeClass = getAccidentTypeClass(r.topType);
+    const rankClass = i === 0 ? 'rank-first' : (i === 1 ? 'rank-second' : (i === 2 ? 'rank-third' : ''));
+    html += `
+      <article class="repeat-rank-card ${rankClass}" onclick="openChartList('store','${escapeAttr(r.store)}')">
+        <div class="repeat-rank-no">${i + 1}</div>
+        <div class="repeat-rank-main">
+          <div class="repeat-store-name">${esc(r.store)}</div>
+          <div class="repeat-store-sub">${esc(cleanDeptName(r.dept))} · ${esc(r.team)}</div>
+          <div class="repeat-store-meta">
+            <span class="data-type-badge ${typeClass}">${esc(r.topType || '미분류')}</span>
+            <span>최근 ${esc(r.recentDate || '-')}</span>
+          </div>
+        </div>
+        <div class="repeat-count-box">
+          <strong>${esc(r.count)}</strong>
+          <span>건</span>
+        </div>
+      </article>
+    `;
   });
-  html += '</tbody></table>';
+  html += '</div>';
   repeatFullList.innerHTML = html;
 }
 
-/* ============ 반복사고 매장: 영업부별 가상 지역 맵 (v12.0: 매장 단위 최고 발생 건수 기준 정밀화) ============ */
+/* ============ 반복사고 매장: 영업부별 가상 지역 맵 (v13.0: 매장 단위 최고 발생 건수 기준 정밀화) ============ */
 function renderRegionMap() {
   const container = $('visualRegionMap');
   if (!container) return;
@@ -752,7 +869,7 @@ function switchView(view) {
   }
 }
 
-/* ============ 데이터 조회: v8.0 간소화된 5단계 필터 및 AI 안전 보건 조언 멘트 연동 ============ */
+/* ============ 데이터 조회: v13.0 간소화된 5단계 필터 및 AI 안전 보건 조언 멘트 연동 ============ */
 
 /**
  * 5단계 필터 렌더링 (매장 및 유형 제거)
@@ -959,7 +1076,7 @@ function generateAiAdvice() {
 }
 
 /**
- * 필터 리셋 (v12.0: AI 조언 박스 대기상태 복원 및 타이머 정지)
+ * 필터 리셋 (v13.0: AI 조언 박스 대기상태 복원 및 타이머 정지)
  */
 async function resetFilters() {
   state.activeFilters = {
@@ -994,18 +1111,25 @@ function renderDataTablePage() {
   if (state.dataPage > max) state.dataPage = max;
   const start = (state.dataPage - 1) * PAGE_SIZE_DATA;
   const pageRows = state.dataRows.slice(start, start + PAGE_SIZE_DATA);
-  
+
   const pager = $('dataPager');
   if (pager) {
     pager.classList.toggle('hidden', state.dataRows.length <= PAGE_SIZE_DATA);
   }
   const pageInfo = $('dataPageInfo');
   if (pageInfo) pageInfo.textContent = state.dataPage + ' / ' + max;
-  
+
   const resultContainer = $('dataResult');
   if (resultContainer) {
-    resultContainer.innerHTML = `<p style="font-weight: 1000; color: var(--navy); font-size: 15px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">📋 사고 데이터 목록 (총 ${state.dataRows.length}건)</p>` +
-      makeRecordTable(pageRows, true);
+    resultContainer.innerHTML = `
+      <div class="data-result-head">
+        <div>
+          <span class="data-result-kicker">조회 결과</span>
+          <strong>사고 데이터 목록</strong>
+        </div>
+        <span class="data-result-count">총 ${state.dataRows.length}건</span>
+      </div>
+    ` + makeDataCardList(pageRows);
   }
 }
 
