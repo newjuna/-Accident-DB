@@ -5,7 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>산업재해 현황 분석 대시보드</title>
   <meta name="description" content="아성다이소 안전보건팀 산업재해 현황 분석 대시보드">
-  <link rel="stylesheet" href="style.css">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">  <script>
+    // 모바일/Teams 내부 브라우저 캐시 방지: 매 접속마다 최신 style.css를 불러옵니다.
+    window.DAISO_ASSET_VERSION = String(Date.now());
+    document.write('<link rel="stylesheet" href="style.css?v=' + window.DAISO_ASSET_VERSION + '">');
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
@@ -225,8 +231,9 @@
         * 본 화면은 16:9 비율 최적화 화면입니다. [이미지 다운로드] 버튼을 눌러 PNG로 저장 후 PPT에 붙여넣으세요.
       </div>
     </div>
-  </div>
-
-  <script src="app.js?v=14"></script>
+  </div>  <script>
+    // 모바일/Teams 내부 브라우저 캐시 방지: 매 접속마다 최신 app.js를 불러옵니다.
+    document.write('<script src="app.js?v=' + (window.DAISO_ASSET_VERSION || Date.now()) + '"><\/script>');
+  </script>
 </body>
 </html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>산업재해 현황 분석 대시보드 접속</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', Arial, sans-serif;
+      background: linear-gradient(135deg, #fffaf1 0%, #f7fbff 100%);
+      color: #071E4A;
+    }
+    .card {
+      width: min(420px, calc(100vw - 32px));
+      background: #fff;
+      border: 1px solid rgba(0,43,109,.12);
+      border-radius: 28px;
+      padding: 30px 24px;
+      box-shadow: 0 18px 42px rgba(7,30,74,.12);
+      text-align: center;
+    }
+    .spinner {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 5px solid #e7eef8;
+      border-top-color: #E60033;
+      border-right-color: #003B8F;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 14px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 1000;
+    }
+    p {
+      margin: 10px 0 0;
+      color: #64748B;
+      font-size: 14px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner"></div>
+    <h1>대시보드 접속 중입니다</h1>
+    <p>최신 화면으로 자동 연결합니다.<br>잠시만 기다려주세요.</p>
+  </div>
+  <script>
+    // 사용자는 ?v= 같은 값을 붙일 필요가 없습니다.
+    // 이 페이지가 자동으로 최신 index.html을 새로 요청합니다.
+    location.replace('./?teams=' + Date.now());
+  </script>
+</body>
+</html>
