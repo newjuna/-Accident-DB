@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwN5dVArHVkSTzg56XTIi2cVTED_xj9-o2UxPRQ7wn2L0FpC3s9nTex0ICOrre-z71GGw/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -60,6 +60,10 @@ const state = {
   minYear: null,
   currentYear: String(new Date().getFullYear()),
   lastDashboardData: null,
+  currentSummarySvg: null,
+  currentSummarySvgs: [],
+  currentSummaryFileName: null,
+  currentSummaryZipName: null,
 
   currentView: 'dashboard'
 };
@@ -1605,37 +1609,42 @@ async function openCaptureMode() {
   showLoading('요약 화면을 만드는 중입니다');
 
   try {
-    const currentData = state.lastDashboardData || {};
-    const currentTotal = Number((currentData.kpi || {}).total || 0);
-    const monthNum = Number(String(selectedMonth).replace('월', ''));
-    const prevDate = getPreviousYearMonth(selectedYear, selectedMonth);
+    const logoDataUrl = await getLogoDataUrl();
 
-    const [prevData, yearTotalData, logoDataUrl] = await Promise.all([
-      callAPI({ action: 'dashboard', division: state.division, year: prevDate.year, month: prevDate.month }),
-      callAPI({ action: 'dashboard', division: state.division, year: selectedYear, month: '전체' }),
-      getLogoDataUrl()
-    ]);
+    let pages = [];
+    if (state.division === '안전보건팀') {
+      const pageDefs = [
+        { division: '수도권영업부문', label: '수도권영업부문', fileSuffix: '01_수도권영업부문', integrated: false },
+        { division: '지방영업부문', label: '지방영업부문', fileSuffix: '02_지방영업부문', integrated: false },
+        { division: '안전보건팀', label: '전체 통합(수도권+지방)', fileSuffix: '03_전체통합', integrated: true }
+      ];
 
-    const prevTotal = Number(((prevData || {}).kpi || {}).total || 0);
-    const monthDiff = currentTotal - prevTotal;
-    const yearlyTotal = Number(((yearTotalData || {}).kpi || {}).total || 0);
+      pages = await Promise.all(pageDefs.map(def =>
+        buildSummarySvgForDivision(def.division, def.label, selectedYear, selectedMonth, logoDataUrl, def.integrated)
+          .then(svg => ({
+            svg,
+            label: def.label,
+            fileName: `산업재해_현황_요약_${selectedYear}년_${selectedMonth}_${def.fileSuffix}.png`
+          }))
+      ));
 
-    const svg = buildSummarySvgReport({
-      year: selectedYear,
-      monthText: selectedMonth,
-      monthNum,
-      division: state.division || '-',
-      currentTotal,
-      prevTotal,
-      prevDate,
-      monthDiff,
-      yearlyTotal,
-      currentData,
-      logoDataUrl
-    });
+      state.currentSummarySvgs = pages;
+      state.currentSummarySvg = pages[0] ? pages[0].svg : null;
+      state.currentSummaryFileName = pages[0] ? pages[0].fileName : null;
+      state.currentSummaryZipName = `산업재해_현황_요약_${selectedYear}년_${selectedMonth}_안전보건팀_3장.zip`;
+    } else {
+      const svg = await buildSummarySvgForDivision(state.division, state.division, selectedYear, selectedMonth, logoDataUrl, false);
+      pages = [{
+        svg,
+        label: state.division,
+        fileName: `산업재해_현황_요약_${selectedYear}년_${selectedMonth}.png`
+      }];
 
-    state.currentSummarySvg = svg;
-    state.currentSummaryFileName = `산업재해_현황_요약_${selectedYear}년_${selectedMonth}.png`;
+      state.currentSummarySvg = svg;
+      state.currentSummarySvgs = [];
+      state.currentSummaryFileName = pages[0].fileName;
+      state.currentSummaryZipName = null;
+    }
 
     modal.classList.remove('hidden');
     body.className = 'svg-summary-report-body';
@@ -1648,20 +1657,56 @@ async function openCaptureMode() {
     }
 
     body.innerHTML = `
-      <div class="svg-summary-preview-wrap">
-        <img id="summarySvgPreview" alt="산업재해 현황 요약 미리보기">
+      <div class="svg-summary-preview-wrap ${pages.length > 1 ? 'multi-page' : ''}">
+        ${pages.map((p, i) => `
+          <div class="svg-summary-page-card">
+            ${pages.length > 1 ? `<div class="svg-summary-page-label">${i + 1}페이지 · ${esc(p.label)}</div>` : ''}
+            <img class="summarySvgPreview" alt="${esc(p.label)} 산업재해 현황 요약 미리보기">
+          </div>
+        `).join('')}
       </div>
     `;
 
-    const preview = $('summarySvgPreview');
-    if (preview) {
-      preview.src = svgToDataUrl(svg);
-    }
+    const imgs = body.querySelectorAll('.summarySvgPreview');
+    imgs.forEach((img, i) => {
+      img.src = svgToDataUrl(pages[i].svg);
+    });
   } catch (err) {
     alert('요약 생성 오류: ' + (err.message || err));
   } finally {
     hideLoading();
   }
+}
+
+async function buildSummarySvgForDivision(division, displayDivision, selectedYear, selectedMonth, logoDataUrl, integrated) {
+  const monthNum = Number(String(selectedMonth).replace('월', ''));
+  const prevDate = getPreviousYearMonth(selectedYear, selectedMonth);
+
+  const [currentData, prevData, yearTotalData] = await Promise.all([
+    callAPI({ action: 'dashboard', division, year: selectedYear, month: selectedMonth }),
+    callAPI({ action: 'dashboard', division, year: prevDate.year, month: prevDate.month }),
+    callAPI({ action: 'dashboard', division, year: selectedYear, month: '전체' })
+  ]);
+
+  const currentTotal = Number(((currentData || {}).kpi || {}).total || 0);
+  const prevTotal = Number(((prevData || {}).kpi || {}).total || 0);
+  const monthDiff = currentTotal - prevTotal;
+  const yearlyTotal = Number(((yearTotalData || {}).kpi || {}).total || 0);
+
+  return buildSummarySvgReport({
+    year: selectedYear,
+    monthText: selectedMonth,
+    monthNum,
+    division: displayDivision || division || '-',
+    currentTotal,
+    prevTotal,
+    prevDate,
+    monthDiff,
+    yearlyTotal,
+    currentData,
+    logoDataUrl,
+    integrated: !!integrated
+  });
 }
 
 async function getLogoDataUrl() {
@@ -1756,7 +1801,7 @@ function buildSummarySvgReport(ctx) {
   <g class="font">
     ${ctx.logoDataUrl ? `<image href="${ctx.logoDataUrl}" x="1038" y="30" width="205" height="70" preserveAspectRatio="xMidYMid meet"/>` : `<text x="1095" y="55" class="navy" font-size="30" font-weight="900">ASUNG</text><text x="1146" y="88" fill="#777" font-size="20" font-weight="900">DAISO</text>`}
 
-    <text x="640" y="72" text-anchor="middle" class="title navy">${svgEsc(ctx.year)}년 ${svgEsc(ctx.monthText)} 산업재해 <tspan class="red">현황</tspan></text>
+    <text x="640" y="72" text-anchor="middle" class="title navy">${svgEsc(ctx.year)}년 ${svgEsc(ctx.monthText)} 산업재해 <tspan class="red">${ctx.integrated ? '통합 현황' : '현황'}</tspan></text>
     <text x="640" y="102" text-anchor="middle" class="sub dark">${svgEsc(ctx.division)} / 기준: ${svgEsc(ctx.year)}.${String(ctx.monthNum).padStart(2,'0')}.01 ~ ${svgEsc(ctx.year)}.${String(ctx.monthNum).padStart(2,'0')}.${monthLastDay}</text>
 
     ${buildKpiSvg({ ...ctx, currentYtd, prevYearYtd })}
@@ -1911,16 +1956,29 @@ function buildTopListSvg(rows, x, y, title) {
   return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff" stroke="#d9d9d9"/><text x="${x+16}" y="${y+29}" class="panel-title navy">${svgEsc(title)}</text>${items}</g>`;
 }
 
-function buildPointSvg(ctx, topTypeName, topDeptName, x = 828, y = 522, w = 414, h = 168) {
+function buildPointSvg(ctx, topTypeName, topDeptName) {
+  const x = 818, y = 572, w = 424, h = 126;
   const diffAbs = Math.abs(Number(ctx.monthDiff || 0));
   const diffWord = ctx.monthDiff <= 0 ? '감소' : '증가';
+
+  if (ctx.integrated) {
+    return `
+  <g>
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff7f7" stroke="#ffc7c7"/>
+    <text x="${x+18}" y="${y+31}" class="red" font-size="20" font-weight="900">다음달 중점관리 포인트</text>
+    <text x="${x+24}" y="${y+62}" class="dark" font-size="14" font-weight="900">• <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan> 사고 중심 TBM·작업 전 주의 강화</text>
+    <text x="${x+24}" y="${y+91}" class="dark" font-size="14" font-weight="900">• <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan> 중심 현장점검 우선 실시</text>
+    <text x="${x+24}" y="${y+120}" class="dark" font-size="14" font-weight="900">• 반복사고 매장 개선조치 이행 여부 확인</text>
+  </g>`;
+  }
+
   return `
   <g>
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff7f7" stroke="#ffc7c7"/>
     <text x="${x+18}" y="${y+31}" class="red" font-size="20" font-weight="900">핵심 포인트</text>
-    <text x="${x+24}" y="${y+68}" class="dark" font-size="14" font-weight="900">• 전월 대비 재해 <tspan class="red" font-weight="900">${diffAbs}건 ${diffWord}</tspan></text>
-    <text x="${x+24}" y="${y+102}" class="dark" font-size="14" font-weight="900">• 최다 재해유형은 <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan></text>
-    <text x="${x+24}" y="${y+136}" class="dark" font-size="14" font-weight="900">• 집중관리 영업부 <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan></text>
+    <text x="${x+24}" y="${y+62}" class="dark" font-size="14" font-weight="900">• 전월 대비 재해 <tspan class="red" font-weight="900">${diffAbs}건 ${diffWord}</tspan></text>
+    <text x="${x+24}" y="${y+91}" class="dark" font-size="14" font-weight="900">• 최다 재해유형은 <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan></text>
+    <text x="${x+24}" y="${y+120}" class="dark" font-size="14" font-weight="900">• 집중관리 영업부 <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan></text>
   </g>`;
 }
 
@@ -2164,31 +2222,39 @@ function closeCaptureMode() {
 }
 
 async function downloadCaptureImage() {
+  const multiPages = state.currentSummarySvgs || [];
+
+  if (multiPages.length > 1) {
+    showLoading('3장 요약 이미지를 ZIP으로 만드는 중입니다...');
+    try {
+      if (typeof JSZip === 'undefined') {
+        for (const page of multiPages) {
+          const blob = await svgToPngBlob(page.svg);
+          downloadBlob(blob, page.fileName);
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+      } else {
+        const zip = new JSZip();
+        for (const page of multiPages) {
+          const blob = await svgToPngBlob(page.svg);
+          zip.file(page.fileName, blob);
+        }
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        downloadBlob(zipBlob, state.currentSummaryZipName || '산업재해_현황_요약_3장.zip');
+      }
+    } catch (err) {
+      alert('이미지 다운로드 중 오류 발생: ' + (err.message || err));
+    } finally {
+      hideLoading();
+    }
+    return;
+  }
+
   if (state.currentSummarySvg) {
     showLoading('이미지 파일 생성 중입니다...');
     try {
-      const img = new Image();
-      const svgUrl = svgToDataUrl(state.currentSummarySvg);
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = svgUrl;
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 1280 * 2;
-      canvas.height = 720 * 2;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      const link = document.createElement('a');
-      link.href = canvas.toDataURL('image/png');
-      link.download = state.currentSummaryFileName || `산업재해_현황_요약_${state.year}년_${state.month}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const blob = await svgToPngBlob(state.currentSummarySvg);
+      downloadBlob(blob, state.currentSummaryFileName || `산업재해_현황_요약_${state.year}년_${state.month}.png`);
     } catch (err) {
       alert('이미지 다운로드 중 오류 발생: ' + (err.message || err));
     } finally {
@@ -2222,4 +2288,36 @@ async function downloadCaptureImage() {
     board.classList.remove('capturing');
     hideLoading();
   }
+}
+
+async function svgToPngBlob(svg) {
+  const img = new Image();
+  const svgUrl = svgToDataUrl(svg);
+
+  await new Promise((resolve, reject) => {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = svgUrl;
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1280 * 2;
+  canvas.height = 720 * 2;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  return await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+}
+
+function downloadBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName || 'download';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

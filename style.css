@@ -3418,3 +3418,32 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
   border: 1px solid #d8d8d8;
   box-shadow: 0 8px 20px rgba(0,0,0,.10);
 }
+
+
+/* 안전보건팀 통합 로그인: 3장 요약 미리보기 */
+.svg-summary-preview-wrap.multi-page {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 22px;
+  padding-bottom: 10px;
+}
+
+.svg-summary-page-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  break-inside: avoid;
+}
+
+.svg-summary-page-label {
+  width: min(1280px, 100%);
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: #0b2f86;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 1000;
+  box-sizing: border-box;
+}
