@@ -23,9 +23,10 @@
   <!-- 로그인 화면 -->
   <section id="loginView" class="login-wrap">
     <div class="login-card">
-      <img src="logo.png" alt="ASUNG DAISO" class="brand-logo-img">
+      <div class="login-logo-container">
+        <img src="logo.png" alt="ASUNG DAISO" class="brand-logo-img">
+      </div>
       <h1>산업재해 현황 분석 대시보드</h1>
-      <p>영업부문별 산재 현황을 조회합니다.</p>
       <label for="loginDivision">영업부문 선택</label>
       <select id="loginDivision">
         <option value="수도권영업부문">수도권영업부문</option>
@@ -92,34 +93,23 @@
         <div id="emptyDashboard" class="empty-message hidden">해당 조건의 대시보드 데이터가 없습니다.</div>
 
         <!-- 차트 그리드 -->
-        <div class="chart-grid">
+        <div class="chart-grid-3">
           <!-- 3개년 추이 (full width) -->
           <div class="panel panel-wide">
             <h3>3개년 월별 재해 추이</h3>
             <div class="chart-container chart-wide"><canvas id="trendChart"></canvas></div>
           </div>
           <div class="panel">
-            <h3>재해유형별 건수</h3>
+            <h3>재해유형별 건수 (TOP 5)</h3>
             <div class="chart-container"><canvas id="typeChart"></canvas></div>
           </div>
           <div class="panel">
-            <h3>영업부별 재해 건수</h3>
+            <h3>영업부별 재해 건수 (TOP 5)</h3>
             <div class="chart-container"><canvas id="deptChart"></canvas></div>
           </div>
           <div class="panel">
-            <h3>팀별 재해 건수 TOP 3</h3>
+            <h3>팀별 재해 건수 (TOP 5)</h3>
             <div class="chart-container"><canvas id="teamChart"></canvas></div>
-          </div>
-          <div class="panel repeat-panel">
-            <div class="panel-head">
-              <h3>최근 1년 반복사고 매장</h3>
-              <div class="pager">
-                <button id="repeatPrev">이전</button>
-                <span id="repeatPageInfo">1 / 1</span>
-                <button id="repeatNext">다음</button>
-              </div>
-            </div>
-            <div id="repeatList" class="repeat-list"></div>
           </div>
         </div>
       </section>
@@ -129,20 +119,14 @@
         <header class="topbar">
           <div>
             <h2>데이터 조회</h2>
-            <p>로그인한 부문의 분석DB를 조회합니다.</p>
           </div>
         </header>
         <div class="panel data-panel">
-          <div class="data-filters">
-            <label>연도<select id="dataYear"></select></label>
-            <label>월<select id="dataMonth"></select></label>
-            <label>영업부<select id="filterDept"><option value="전체">전체</option></select></label>
-            <label>팀<select id="filterTeam"><option value="전체">전체</option></select></label>
-            <label>매장<select id="filterStore"><option value="전체">전체</option></select></label>
-            <label>재해유형<select id="filterType"><option value="전체">전체</option></select></label>
-            <label>매장명 검색<input id="filterStoreSearch" placeholder="매장명 입력"></label>
-            <div class="btn-group">
-              <button id="dataSearchBtn">조회</button>
+          <div class="data-filters-wrapper">
+            <div id="dataFiltersContainer" class="data-filters">
+              <!-- JS 단에서 연도->월->영업부->팀 순서로 드롭다운이 동적 순차 생성됩니다 -->
+            </div>
+            <div class="btn-group" style="margin-top: auto; padding-bottom: 4px;">
               <button id="filterResetBtn" class="btn-sub">초기화</button>
             </div>
           </div>
@@ -159,8 +143,7 @@
       <section id="repeatPage" class="page hidden">
         <header class="topbar">
           <div>
-            <h2>반복사고 현황 및 분포</h2>
-            <p>최근 1년간 동일 매장 2건 이상 사고 발생 현황 및 영업부별 분포 맵입니다.</p>
+            <h2>최근 1년간 동일 매장 2건 이상 사고 발생 현황</h2>
           </div>
         </header>
         <div class="map-and-list-grid">

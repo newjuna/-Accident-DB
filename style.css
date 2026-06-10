@@ -36,6 +36,12 @@ body {
 
 /* ============ 로고 이미지 ============ */
 
+.login-logo-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
 .brand-logo-img {
   display: block;
   width: 200px;
@@ -166,7 +172,11 @@ h1 {
 }
 .logout {
   margin-top: 34px;
-  border: 1px solid rgba(230, 0, 51, .45) !important;
+  border: none !important;
+  color: var(--red) !important;
+}
+.logout:hover {
+  background: rgba(230, 0, 51, .08) !important;
 }
 
 .main {
@@ -324,10 +334,15 @@ h1 {
 
 /* ============ 차트 ============ */
 
-.chart-grid {
+.chart-grid-3 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 18px;
+}
+@media (max-width: 1200px) {
+  .chart-grid-3 {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* 전체 너비 패널 (3개년 추이) */
@@ -714,6 +729,32 @@ h1 {
 }
 
 /* 데이터 조회 필터 그룹 및 초기화 버튼 */
+.data-filters-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.data-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.data-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #344054;
+  animation: fadeIn 0.25s ease-in-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .btn-group {
   display: flex;
   gap: 8px;
