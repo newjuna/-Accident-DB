@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 </head>
 <body class="v10-playful-retail">
 
@@ -144,7 +145,9 @@
               <button id="filterResetBtn" class="btn-sub">초기화</button>
             </div>
           </div>
-          <div id="aiAdviceBox" class="ai-advice-card hidden"></div>
+          <div id="aiAdviceBox" class="ai-advice-card">
+            <div class="ai-advice-content">🤖 AI 안전진단 분석 대기 중... 필터를 선택해 주세요.</div>
+          </div>
           <div id="dataResult" class="table-wrap"></div>
           <div id="dataPager" class="pager hidden">
             <button id="dataPrev">이전</button>
@@ -210,17 +213,20 @@
     <div class="capture-board">
       <div class="capture-head">
         <span class="capture-title">산업재해 현황 분석 대시보드 (PPT 캡처용)</span>
-        <button id="captureCloseBtn" class="modalClose">&times;</button>
+        <div style="display: flex; align-items: center;">
+          <button id="captureDownloadBtn" class="btn-sub" style="margin-right: 12px; height: 36px !important; line-height: 36px; padding: 0 14px !important; font-size: 13px;">이미지 다운로드</button>
+          <button id="captureCloseBtn" class="modalClose">&times;</button>
+        </div>
       </div>
       <div id="captureBody" class="capture-body-grid">
         <!-- 대시보드 복제본 렌더링 영역 -->
       </div>
       <div class="capture-foot">
-        * 본 화면은 16:9 비율 최적화 화면입니다. 전체 화면 캡처 도구로 영역을 지정하여 복사한 뒤 PPT에 붙여넣으세요.
+        * 본 화면은 16:9 비율 최적화 화면입니다. [이미지 다운로드] 버튼을 눌러 PNG로 저장 후 PPT에 붙여넣으세요.
       </div>
     </div>
   </div>
 
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

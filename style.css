@@ -717,6 +717,22 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
 .capture-body-grid .panel h3 { font-size: 15px; margin-bottom: 8px; }
 .capture-body-grid .chart-container { height: 200px; }
 .capture-foot { margin-top: 12px; font-size: 11px; color: var(--gray); text-align: left; font-weight: 700; }
+.capture-board.capturing {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+  background: #ffffff !important;
+}
+.ai-advice-content::after {
+  content: '|';
+  margin-left: 2px;
+  color: var(--muted);
+  animation: blink-caret 0.75s step-end infinite;
+}
+@keyframes blink-caret {
+  from, to { opacity: 0; }
+  50% { opacity: 1; }
+}
 
 /* ============ 반응형 ============ */
 @media (max-width: 1200px) {
