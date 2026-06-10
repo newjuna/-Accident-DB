@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbzjwjeBkWB-f23tPO_A4gphBbAux4ucDHpEIRjnU8f5pd7I8ThPxulqitJbp7H8dbTUcQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1817,10 +1817,11 @@ function buildSummarySvgReport(ctx) {
 function buildKpiSvg(ctx) {
   const diffText = formatMonthlyDiff(ctx.monthDiff);
   const diffColor = getChangeSvgColor(ctx.monthDiff);
+  const prevTotalText = Number(ctx.prevTotal || 0);
 
   const yoyText = formatYoyText(ctx.currentYtd, ctx.prevYearYtd);
-  const yoyDiff = Number(ctx.currentYtd || 0) - Number(ctx.prevYearYtd || 0);
   const yoyColor = getYoySvgColor(ctx.currentYtd, ctx.prevYearYtd);
+  const prevYearYtdText = Number(ctx.prevYearYtd || 0);
 
   return `
   <g class="shadow">
@@ -1831,17 +1832,17 @@ function buildKpiSvg(ctx) {
     <text x="188" y="164" class="dark" font-size="21" font-weight="900">총 재해</text>
     <text x="188" y="202" class="red" font-size="36" font-weight="900">${ctx.currentTotal}건</text>
 
-    <rect x="374" y="153" width="214" height="52" rx="14" fill="${diffColor}" opacity="0.10"/>
-    <text x="481" y="174" text-anchor="middle" fill="#444" font-size="14" font-weight="900">전월 대비</text>
-    <text x="481" y="199" text-anchor="middle" fill="${diffColor}" font-size="20" font-weight="900">${svgEsc(diffText)}</text>
+    <rect x="348" y="153" width="254" height="52" rx="14" fill="${diffColor}" opacity="0.10"/>
+    <text x="475" y="174" text-anchor="middle" fill="#444" font-size="13" font-weight="900">전월 ${prevTotalText}건 대비</text>
+    <text x="475" y="199" text-anchor="middle" fill="${diffColor}" font-size="20" font-weight="900">${svgEsc(diffText)}</text>
 
     ${growthIconSvg(690, 150, 52)}
     <text x="762" y="164" class="dark" font-size="21" font-weight="900">연간 누적</text>
     <text x="762" y="202" class="navy" font-size="36" font-weight="900">${ctx.currentYtd}건</text>
 
-    <rect x="956" y="153" width="222" height="52" rx="14" fill="${yoyColor}" opacity="0.10"/>
-    <text x="1067" y="174" text-anchor="middle" fill="#444" font-size="13" font-weight="900">전년 동기 누적 대비</text>
-    <text x="1067" y="199" text-anchor="middle" fill="${yoyColor}" font-size="19" font-weight="900">${svgEsc(yoyText)}</text>
+    <rect x="928" y="153" width="264" height="52" rx="14" fill="${yoyColor}" opacity="0.10"/>
+    <text x="1060" y="174" text-anchor="middle" fill="#444" font-size="13" font-weight="900">전년 동기 ${prevYearYtdText}건 대비</text>
+    <text x="1060" y="199" text-anchor="middle" fill="${yoyColor}" font-size="19" font-weight="900">${svgEsc(yoyText)}</text>
   </g>`;
 }
 
