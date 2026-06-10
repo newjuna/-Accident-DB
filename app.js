@@ -1,20 +1,25 @@
 /* ============================================================
- *  산업재해 현황 분석 대시보드 v14.0 — 클라이언트
+ *  산업재해 현황 분석 대시보드 v15.0 — 클라이언트
  *
- *  ■ 기준: 사용자가 제공한 최신 index.html / style.css / app.js 구조 유지
- *  ■ Apps Script 배포 URL은 아래 API_URL 값을 사용합니다.
- *  ■ 변경사항 v14.0:
- *    - 기존 데이터 조회·대시보드·반복사고 조회 기능 유지
- *    - 사고 상세보기 팝업을 플레이풀 카드형 디자인으로 개선
- *    - 데이터 조회 결과를 카드형 리스트로 개선
- *    - 반복사고 매장 리스트를 랭킹 카드형으로 개선
- *    - 과거 버전 주석을 v13 기준으로 정리
- *    - 데이터 조회: 선택한 연도/월에 데이터가 있는 영업부만 드롭다운 표시
- *    - 데이터 조회: 영업부 퀵서비스 버튼 추가
+ *  ■ Apps Script 배포 URL을 아래 API_URL에 붙여넣으세요.
+ *  ■ 변경사항 v15.0:
+ *    - 대시보드 화면 내 미니 반복사고 리스트 패널 제거
+ *    - 차트 클릭 시 팝업 띄우는 기능 전면 제거 (차트 클릭 불가 처리)
+ *    - 차트 내 데이터라벨 및 축 텍스트 크기 확대 (12px bold)
+ *    - 가로 막대 차트 Y축(부서명/팀명) 표시 롤백, X축 수치 스케일 완전 제거
+ *    - 로그인 후 병렬 비동기 통신 처리로 로딩 속도 단축
+ *    - 데이터 조회: 연도 선택 ➡️ 월 ➡️ 영업부 ➡️ 팀 순서로 드롭다운 순차 동적 생성
+ *    - 데이터 조회: 조회 버튼 제거, 드롭다운 변경 시 자동 실시간 쿼리 및 렌더링
+ *    - 데이터 조회: 초기화 클릭 시 연도 필터만 남기고 클리어
+ *    - 상세 팝업 호출 시의 대기용 로딩 오버레이 팝업 원복
+ *    - 반복사고 분포 맵: 2건 이상 발생한 영업부만 맵에 렌더링
+ *    - 분포 맵 클릭 시 팝업을 띄우지 않고, 우측의 매장 리스트 테이블을 실시간 필터링 연동
+ *    - 로그아웃 테두리 제거 및 붉은색 텍스트 변경
+ *    - 로그인 창 로고 중앙 정렬 및 서브 타이틀 문구 제거
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxkJ98XNaLD7GW-ToGUEu7NPlB9-VkbtzCQ0QQMa7miiF1nyXU9yonu0QKh97q_XxvZkA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -32,13 +37,13 @@ const state = {
   repeatRows: [],
   listRows: [],
   listPage: 1,
+  listModalMode: 'table',
+  listModalContext: null,
   
   // 데이터 조회 전용 상태 및 순차 필터링용 옵션 백업
   dataRows: [],
   dataPage: 1,
   initFilterData: null, // 초기 필터 정보 캐시
-  dataOptionRows: [], // 선택한 연도/월 기준 전체 행 캐시(영업부/팀 옵션 생성용)
-  dataOptionKey: '', // dataOptionRows가 어느 연도/월 기준인지 확인하는 키
   
   // 데이터 조회 활성 필터 상태
   activeFilters: {
@@ -378,7 +383,7 @@ function renderDashboard(data) {
   renderRegionMap();
 }
 
-/* ============ 차트 그리기 (v13.0: 클릭 비활성화, 텍스트 크기 확대 12px, 수치 스케일 제거) ============ */
+/* ============ 차트 그리기 (v7.0: 클릭 비활성화, 텍스트 크기 확대 12px, 수치 스케일 제거) ============ */
 function drawRankedBarChart(canvasId, chartKey, rows, yoyRows, horizontal) {
   const canvas = $(canvasId);
   if (!canvas) return;
@@ -536,7 +541,17 @@ async function openChartList(chartType, label) {
     });
     state.listRows = (res && res.rows) || [];
     state.listPage = 1;
+    state.listModalMode = (chartType === 'store') ? 'cards' : 'table';
+    state.listModalContext = { chartType, label };
     $('listModalTitle').textContent = cleanDeptName(label || '') + ' 사고 리스트 (' + state.listRows.length + '건)';
+
+    const listModal = $('listModal');
+    const listModalBox = listModal ? listModal.querySelector('.modal-box') : null;
+    if (listModalBox) {
+      listModalBox.classList.toggle('list-card-mode', state.listModalMode === 'cards');
+      listModalBox.classList.toggle('wide', true);
+    }
+
     renderListModalPage();
     $('listModal').classList.remove('hidden');
   } catch (err) {
@@ -552,7 +567,60 @@ function renderListModalPage() {
   const listPageInfo = $('listPageInfo');
   if (listPageInfo) listPageInfo.textContent = state.listPage + ' / ' + max;
   const listModalBody = $('listModalBody');
-  if (listModalBody) listModalBody.innerHTML = makeRecordTable(pageRows, true);
+  if (!listModalBody) return;
+
+  if (state.listModalMode === 'cards') {
+    listModalBody.innerHTML = makeRepeatStoreCardList(pageRows, state.listRows);
+  } else {
+    listModalBody.innerHTML = makeRecordTable(pageRows, true);
+  }
+}
+
+function getAccidentTypeTone(type) {
+  const t = String(type || '').trim();
+  if (!t) return 'tone-gray';
+  if (/(깔림|끼임|절단|베임|협착)/.test(t)) return 'tone-red';
+  if (/(무리한 동작|근골격|요통|통증)/.test(t)) return 'tone-green';
+  if (/(넘어짐|전도|부딪힘|충돌|미끄러짐)/.test(t)) return 'tone-blue';
+  return 'tone-gray';
+}
+
+function makeRepeatStoreCardList(pageRows, allRows) {
+  const totalRows = allRows || [];
+  if (!pageRows || !pageRows.length) {
+    return '<div class="empty-message">조회된 사고가 없습니다.</div>';
+  }
+
+  const first = totalRows[0] || pageRows[0] || {};
+  const chips = [];
+  if (first.stdDept) chips.push(`<span class="list-modal-chip">${esc(cleanDeptName(first.stdDept))}</span>`);
+  if (first.stdTeam) chips.push(`<span class="list-modal-chip">${esc(first.stdTeam)}</span>`);
+
+  const metaHtml = chips.length ? `<div class="list-modal-meta">${chips.join('')}</div>` : '';
+
+  const cardsHtml = pageRows.map(r => {
+    const tone = getAccidentTypeTone(r.accidentType);
+    return `
+      <button type="button" class="accident-list-card ${tone}" onclick="openDetail('${escapeAttr(r.recordId)}')">
+        <div class="accident-list-card-head">
+          <div class="accident-date-wrap">
+            <span class="accident-date-icon">🗓</span>
+            <span class="accident-date-text">${esc(r.accidentDate)}</span>
+          </div>
+          <span class="accident-type-badge ${tone}">${esc(r.accidentType || '기타')}</span>
+        </div>
+        <div class="accident-store-name">${esc(r.store || '')}</div>
+        <div class="accident-summary-box ${tone}">${esc(r.accidentContent || '')}</div>
+        <div class="accident-card-footer">
+          <span class="accident-card-meta"><span class="meta-ico">🏬</span>${esc(cleanDeptName(r.stdDept || ''))}</span>
+          <span class="meta-dot">•</span>
+          <span class="accident-card-meta"><span class="meta-ico">👤</span>${esc(r.stdTeam || '')}</span>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  return `<div class="repeat-store-card-list">${metaHtml}<div class="accident-list-cards">${cardsHtml}</div></div>`;
 }
 
 function makeRecordTable(rows, clickable) {
@@ -575,129 +643,19 @@ function makeRecordTable(rows, clickable) {
   return html;
 }
 
-function detailVal(d, key) {
-  const v = d ? d[key] : '';
-  return (v === undefined || v === null || String(v).trim() === '') ? '-' : String(v);
-}
-
-function getAccidentTypeClass(type) {
-  const t = String(type || '');
-  if (/넘어|미끄|전도|추락|낙상/.test(t)) return 'type-fall';
-  if (/끼임|절단|베임|찔림|부딪|협착|화상|충돌/.test(t)) return 'type-red';
-  if (/근골|요통|염좌|무리|통증|삐끗/.test(t)) return 'type-green';
-  return 'type-gray';
-}
-
-function makeDetailMiniCard(icon, label, value) {
-  return `
-    <div class="detail-mini-card">
-      <div class="detail-mini-icon">${icon}</div>
-      <div>
-        <span>${esc(label)}</span>
-        <strong>${esc(value)}</strong>
-      </div>
-    </div>
-  `;
-}
-
-function makeDetailRow(icon, label, value) {
-  return `
-    <div class="detail-row">
-      <span class="detail-row-label"><i>${icon}</i>${esc(label)}</span>
-      <strong>${esc(value)}</strong>
-    </div>
-  `;
-}
-
-function makeDataCardList(rows) {
-  if (!rows || !rows.length) return '<div class="empty-message">조회된 사고가 없습니다.</div>';
-
-  let html = '<div class="data-card-list">';
-  rows.forEach((r, i) => {
-    const typeClass = getAccidentTypeClass(r.accidentType);
-    html += `
-      <article class="data-record-card" onclick="openDetail('${escapeAttr(r.recordId)}')">
-        <div class="data-record-left">
-          <div class="data-record-store-icon">🏬</div>
-          <div>
-            <div class="data-record-date">${esc(r.accidentDate || '-')}</div>
-            <div class="data-record-store">${esc(r.store || '-')}</div>
-            <div class="data-record-org">${esc(cleanDeptName(r.stdDept))} · ${esc(r.stdTeam || '-')}</div>
-          </div>
-        </div>
-        <div class="data-record-content">
-          <span class="data-type-badge ${typeClass}">${esc(r.accidentType || '미분류')}</span>
-          <p>${esc(shorten(r.accidentContent, 110))}</p>
-        </div>
-        <button class="data-detail-btn" type="button">상세보기</button>
-      </article>
-    `;
-  });
-  html += '</div>';
-  return html;
-}
-
-/* ============ 사고 상세 팝업 (v13.0 플레이풀 카드형 디자인) ============ */
+/* ============ 사고 상세 팝업 (로딩창 노출 복원) ============ */
 async function openDetail(recordId) {
-  showLoading('사고 상세를 불러오는 중입니다');
+  showLoading('사고 상세를 불러오는 중입니다'); // 로딩 오버레이 롤백
   try {
     const res = await callAPI({ action: 'detail', division: state.division, recordId });
-    const d = res.detail || {};
-
-    const accidentDate = detailVal(d, '재해일자');
-    const dept = cleanDeptName(detailVal(d, '영업부'));
-    const team = detailVal(d, '팀');
-    const store = detailVal(d, '매장명');
-    const victim = detailVal(d, '재해자명');
-    const employeeNo = detailVal(d, '사번');
-    const accidentType = detailVal(d, '재해유형');
-    const cause = detailVal(d, '기인물');
-    const accidentContent = detailVal(d, '사고내용');
-    const typeClass = getAccidentTypeClass(accidentType);
-
-    const html = `
-      <div class="detail-playful">
-        <div class="detail-sticker">사고</div>
-
-        <section class="detail-hero-card">
-          <div class="detail-hero-title">
-            <div class="detail-hero-icon">📋</div>
-            <div>
-              <h4>사고 상세보기</h4>
-              <p>${esc(accidentDate)} · ${esc(dept)} · ${esc(team)} · ${esc(store)}</p>
-            </div>
-          </div>
-          <span class="detail-type-badge ${typeClass}">${esc(accidentType)}</span>
-        </section>
-
-        <section class="detail-mini-grid">
-          ${makeDetailMiniCard('📅', '재해일자', accidentDate)}
-          ${makeDetailMiniCard('🏬', '매장명', store)}
-          ${makeDetailMiniCard('👥', '팀', team)}
-          ${makeDetailMiniCard('🏢', '영업부', dept)}
-        </section>
-
-        <section class="detail-section-grid">
-          <div class="detail-paper-card person-card">
-            <h5><span>👤</span> 인적 정보</h5>
-            ${makeDetailRow('👤', '재해자명', victim)}
-            ${makeDetailRow('🪪', '사번', employeeNo)}
-          </div>
-
-          <div class="detail-paper-card type-card">
-            <h5><span>⚠️</span> 사고 분류</h5>
-            ${makeDetailRow('⚠️', '재해유형', accidentType)}
-            ${makeDetailRow('📦', '기인물', cause)}
-          </div>
-        </section>
-
-        <section class="detail-paper-card accident-card">
-          <h5><span>📝</span> 사고 내용</h5>
-          <div class="detail-accident-content">${esc(accidentContent)}</div>
-        </section>
-      </div>
-    `;
-
+    const d = res.detail;
+    let html = '<dl class="detail-grid">';
+    ['재해일자', '영업부', '팀', '매장명', '재해자명', '사번', '재해유형', '기인물'].forEach(k => {
+      let val = d[k];
+      if (k === '영업부') val = cleanDeptName(val);
+      html += '<dt>' + k + '</dt><dd style="color: #000000 !important;">' + esc(val) + '</dd>';
+    });
+    html += '<dt>사고내용</dt><dd class="accident-content">' + esc(d['사고내용']) + '</dd></dl>';
     $('detailBody').innerHTML = html;
     $('detailModal').classList.remove('hidden');
   } catch (err) {
@@ -709,12 +667,16 @@ window.openDetail = openDetail;
 function closeModals() {
   $('listModal').classList.add('hidden');
   $('detailModal').classList.add('hidden');
+  state.listModalMode = 'table';
+  state.listModalContext = null;
+  const listModalBox = $('listModal') ? $('listModal').querySelector('.modal-box') : null;
+  if (listModalBox) listModalBox.classList.remove('list-card-mode');
 }
 
 /* ============ 반복사고 매장 전체 리스트 렌더링 (가상 맵 필터 연동 포함) ============ */
 function renderRepeatFull() {
   let rows = state.repeatRows || [];
-
+  
   // 가상 지역 맵 클릭 필터가 켜져 있으면 필터링 처리
   if (state.selectedRegionFilter) {
     rows = rows.filter(r => r.dept === state.selectedRegionFilter);
@@ -726,34 +688,20 @@ function renderRepeatFull() {
     repeatFullList.innerHTML = '<div class="empty-message">조건에 맞는 반복사고 매장이 없습니다.</div>';
     return;
   }
-
-  let html = '<div class="repeat-rank-list">';
+  let html = '<table><thead><tr>' +
+    '<th>순위</th><th>매장명</th><th>건수</th><th>주요유형</th>' +
+    '<th>최근사고일</th><th>영업부</th><th>팀</th></tr></thead><tbody>';
   rows.forEach((r, i) => {
-    const typeClass = getAccidentTypeClass(r.topType);
-    const rankClass = i === 0 ? 'rank-first' : (i === 1 ? 'rank-second' : (i === 2 ? 'rank-third' : ''));
-    html += `
-      <article class="repeat-rank-card ${rankClass}" onclick="openChartList('store','${escapeAttr(r.store)}')">
-        <div class="repeat-rank-no">${i + 1}</div>
-        <div class="repeat-rank-main">
-          <div class="repeat-store-name">${esc(r.store)}</div>
-          <div class="repeat-store-sub">${esc(cleanDeptName(r.dept))} · ${esc(r.team)}</div>
-          <div class="repeat-store-meta">
-            <span class="data-type-badge ${typeClass}">${esc(r.topType || '미분류')}</span>
-            <span>최근 ${esc(r.recentDate || '-')}</span>
-          </div>
-        </div>
-        <div class="repeat-count-box">
-          <strong>${esc(r.count)}</strong>
-          <span>건</span>
-        </div>
-      </article>
-    `;
+    html += '<tr class="clickable" onclick="openChartList(\'store\',\'' + escapeAttr(r.store) + '\')">' +
+      '<td>' + (i + 1) + '</td><td>' + esc(r.store) + '</td><td style="color:var(--red); font-weight:bold;">' + r.count + '</td>' +
+      '<td>' + esc(r.topType) + '</td><td>' + esc(r.recentDate) + '</td>' +
+      '<td>' + esc(cleanDeptName(r.dept)) + '</td><td>' + esc(r.team) + '</td></tr>';
   });
-  html += '</div>';
+  html += '</tbody></table>';
   repeatFullList.innerHTML = html;
 }
 
-/* ============ 반복사고 매장: 영업부별 가상 지역 맵 (v13.0: 매장 단위 최고 발생 건수 기준 정밀화) ============ */
+/* ============ 반복사고 매장: 영업부별 가상 지역 맵 (v12.0: 매장 단위 최고 발생 건수 기준 정밀화) ============ */
 function renderRegionMap() {
   const container = $('visualRegionMap');
   if (!container) return;
@@ -873,143 +821,20 @@ function switchView(view) {
   }
 }
 
-/* ============ 데이터 조회: v14.0 기간 연동 필터 + 영업부 퀵서비스 ============ */
+/* ============ 데이터 조회: v8.0 간소화된 5단계 필터 및 AI 안전 보건 조언 멘트 연동 ============ */
 
-function getDataPeriodKey() {
-  const f = state.activeFilters;
-  return `${f.year || ''}|${f.month || ''}`;
-}
-
-function resetDownstreamDataFilters(resetMonth) {
-  const f = state.activeFilters;
-  if (resetMonth) f.month = '';
-  f.dept = '전체';
-  f.team = '전체';
-  f.storeSearch = '';
-  state.dataOptionRows = [];
-  state.dataOptionKey = '';
-  state.dataRows = [];
-  state.dataPage = 1;
-}
-
-async function loadDataFilterOptions(force) {
-  const f = state.activeFilters;
-  if (!f.year || !f.month) {
-    state.dataOptionRows = [];
-    state.dataOptionKey = '';
-    return;
-  }
-
-  const key = getDataPeriodKey();
-  if (!force && state.dataOptionKey === key) return;
-
-  const optionFilters = {
-    year: f.year,
-    month: f.month,
-    dept: '전체',
-    team: '전체',
-    store: '전체',
-    type: '전체',
-    storeSearch: ''
-  };
-
-  const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(optionFilters) });
-  state.dataOptionRows = res.rows || [];
-  state.dataOptionKey = key;
-}
-
-function getDeptCounts_() {
-  const counts = {};
-  (state.dataOptionRows || []).forEach(r => {
-    const dept = r.stdDept || '';
-    if (!dept) return;
-    counts[dept] = (counts[dept] || 0) + 1;
-  });
-  return counts;
-}
-
-function getAvailableDepartments_() {
-  const init = state.initFilterData || {};
-  const counts = getDeptCounts_();
-  const available = Object.keys(counts);
-
-  const ordered = [];
-  (init.departments || []).forEach(d => {
-    if (counts[d]) ordered.push(d);
-  });
-  available.forEach(d => {
-    if (!ordered.includes(d)) ordered.push(d);
-  });
-  return ordered;
-}
-
-function getFilteredTeams_(dept) {
-  const teams = new Set();
-  (state.dataOptionRows || []).forEach(r => {
-    if ((dept === '전체' || r.stdDept === dept) && r.stdTeam) teams.add(r.stdTeam);
-  });
-  return [...teams].sort();
-}
-
-function makeDeptQuickServiceHtml() {
-  const f = state.activeFilters;
-  if (!f.year || !f.month) return '';
-
-  const deptCounts = getDeptCounts_();
-  const departments = getAvailableDepartments_();
-  const total = (state.dataOptionRows || []).length;
-
-  if (!departments.length) {
-    return `
-      <div class="dept-quick-service is-empty">
-        <div class="dept-quick-head">
-          <span>빠른 영업부 조회</span>
-          <small>선택한 기간에 등록된 사고 데이터가 없습니다.</small>
-        </div>
-      </div>
-    `;
-  }
-
-  let html = `
-    <div class="dept-quick-service">
-      <div class="dept-quick-head">
-        <span>빠른 영업부 조회</span>
-        <small>선택한 기간에 데이터가 있는 영업부만 표시됩니다.</small>
-      </div>
-      <div class="dept-quick-buttons">
-        <button type="button" class="dept-quick-btn ${f.dept === '전체' ? 'active' : ''}" onclick="selectQuickDept('전체')">
-          <span>전체</span><b>${total}건</b>
-        </button>
-  `;
-
-  departments.forEach(d => {
-    html += `
-        <button type="button" class="dept-quick-btn ${f.dept === d ? 'active' : ''}" onclick="selectQuickDept('${escapeAttr(d)}')">
-          <span>${esc(cleanDeptName(d))}</span><b>${deptCounts[d] || 0}건</b>
-        </button>
-    `;
-  });
-
-  html += `
-      </div>
-    </div>
-  `;
-  return html;
-}
-
+/**
+ * 5단계 필터 렌더링 (매장 및 유형 제거)
+ */
 function renderDataFilters() {
   const container = $('dataFiltersContainer');
   if (!container || !state.initFilterData) return;
 
   const init = state.initFilterData;
   const f = state.activeFilters;
-  const availableDepartments = getAvailableDepartments_();
 
-  let html = makeDeptQuickServiceHtml();
-  html += '<div class="data-filter-row">';
-
-  // 1. 연도
-  html += `<label>연도<select id="dataYear">`;
+  // 1. 연도 (기본 노출)
+  let html = `<label>연도<select id="dataYear">`;
   const numericYears = init.years.filter(y => y !== '전체');
   numericYears.forEach(y => {
     html += `<option value="${y}" ${String(y) === String(f.year) ? 'selected' : ''}>${y}</option>`;
@@ -1018,25 +843,24 @@ function renderDataFilters() {
 
   // 2. 월
   if (f.year) {
-    const months = ['', '전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+    const months = ['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
     html += `<label>월<select id="dataMonth">`;
     months.forEach(m => {
-      const label = m || '월 선택';
-      html += `<option value="${m}" ${String(m) === String(f.month) ? 'selected' : ''}>${label}</option>`;
+      html += `<option value="${m}" ${String(m) === String(f.month) ? 'selected' : ''}>${m}</option>`;
     });
     html += `</select></label>`;
   }
 
-  // 3. 영업부: 선택한 연도/월에 실제 데이터가 있는 영업부만 표시
+  // 3. 영업부
   if (f.year && f.month) {
     html += `<label>영업부<select id="filterDept"><option value="전체">전체</option>`;
-    availableDepartments.forEach(d => {
+    (init.departments || []).forEach(d => {
       html += `<option value="${d}" ${String(d) === String(f.dept) ? 'selected' : ''}>${cleanDeptName(d)}</option>`;
     });
     html += `</select></label>`;
   }
 
-  // 4. 팀: 선택한 연도/월 + 영업부에 실제 데이터가 있는 팀만 표시
+  // 4. 팀 (영업부 선택 시 동적 생성)
   if (f.year && f.month && f.dept && f.dept !== '전체') {
     const filteredTeams = getFilteredTeams_(f.dept);
     html += `<label>팀<select id="filterTeam"><option value="전체">전체</option>`;
@@ -1046,107 +870,76 @@ function renderDataFilters() {
     html += `</select></label>`;
   }
 
-  // 5. 매장명 검색
+  // 5. 매장명 검색 (팀까지 렌더링 시 노출)
   if (f.year && f.month && f.dept && f.dept !== '전체') {
-    html += `<label>매장명 검색<input id="filterStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력 후 Enter"></label>`;
+    html += `<label>매장명 검색<input id="filterStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력"></label>`;
   }
 
-  html += '</div>';
   container.innerHTML = html;
 
+  // 이벤트 핸들러 바인딩 및 자동 실시간 조회 연동
   const selYear = $('dataYear');
-  if (selYear) selYear.addEventListener('change', (e) => {
-    f.year = e.target.value;
-    resetDownstreamDataFilters(true);
-    renderDataFilters();
-    renderDataTablePage();
-  });
+  if (selYear) selYear.addEventListener('change', (e) => { f.year = e.target.value; renderDataFilters(); loadDataTable(); });
 
   const selMonth = $('dataMonth');
-  if (selMonth) selMonth.addEventListener('change', (e) => {
-    f.month = e.target.value;
-    f.dept = '전체';
-    f.team = '전체';
-    f.storeSearch = '';
-    state.dataOptionRows = [];
-    state.dataOptionKey = '';
-    if (!f.month) {
-      state.dataRows = [];
-      renderDataFilters();
-      renderDataTablePage();
-      return;
-    }
-    loadDataTable({ reloadOptions: true, loadingMessage: '선택한 기간의 영업부를 불러오는 중입니다' });
-  });
+  if (selMonth) selMonth.addEventListener('change', (e) => { f.month = e.target.value; renderDataFilters(); loadDataTable(); });
 
   const selDept = $('filterDept');
-  if (selDept) selDept.addEventListener('change', (e) => {
-    f.dept = e.target.value;
-    f.team = '전체';
-    f.storeSearch = '';
-    renderDataFilters();
-    loadDataTable();
+  if (selDept) selDept.addEventListener('change', (e) => { 
+    f.dept = e.target.value; 
+    f.team = '전체'; 
+    renderDataFilters(); 
+    loadDataTable(); 
   });
 
   const selTeam = $('filterTeam');
-  if (selTeam) selTeam.addEventListener('change', (e) => {
-    f.team = e.target.value;
-    renderDataFilters();
-    loadDataTable();
+  if (selTeam) selTeam.addEventListener('change', (e) => { 
+    f.team = e.target.value; 
+    renderDataFilters(); 
+    loadDataTable(); 
   });
 
   const txtSearch = $('filterStoreSearch');
   if (txtSearch) {
-    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; triggerAiAdviceTimer(); });
+    txtSearch.addEventListener('input', (e) => { f.storeSearch = e.target.value; triggerAiAdviceTimer(); }); // 타이핑 마다 AI 타이머 재연장
     txtSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadDataTable(); });
   }
 }
 
-function selectQuickDept(dept) {
-  const f = state.activeFilters;
-  f.dept = dept || '전체';
-  f.team = '전체';
-  f.storeSearch = '';
-  renderDataFilters();
-  loadDataTable();
+function getFilteredTeams_(dept) {
+  const init = state.initFilterData;
+  if (!init) return [];
+  const teams = new Set();
+  state.dataRows.forEach(r => {
+    if (r.stdDept === dept && r.stdTeam) teams.add(r.stdTeam);
+  });
+  return [...teams].sort();
 }
-window.selectQuickDept = selectQuickDept;
 
 /**
  * 실시간 자동 쿼리 수행
  */
-async function loadDataTable(options = {}) {
+async function loadDataTable() {
   const f = state.activeFilters;
   if (!f.year || !f.month) return;
 
-  showLoading(options.loadingMessage || '데이터 조회 중입니다');
+  showLoading('데이터 조회 중입니다');
   try {
-    if (options.reloadOptions || state.dataOptionKey !== getDataPeriodKey()) {
-      await loadDataFilterOptions(true);
-    }
-
-    const availableDepartments = getAvailableDepartments_();
-    if (f.dept !== '전체' && !availableDepartments.includes(f.dept)) {
-      f.dept = '전체';
-      f.team = '전체';
-      f.storeSearch = '';
-    }
-
     const queryFilters = {
       year: f.year,
       month: f.month,
       dept: f.dept,
       team: f.team,
-      store: '전체',
+      store: '전체', // API 파라미터는 백엔드 호환성을 위해 고정값 유지
       type: '전체',
       storeSearch: f.storeSearch
     };
     const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(queryFilters) });
     state.dataRows = res.rows || [];
     state.dataPage = 1;
-
-    renderDataFilters();
     renderDataTablePage();
+    
+    // 조회가 끝나면 AI 안전 진단 타이머(5초 디바운스) 작동 시작
     triggerAiAdviceTimer();
   } catch (err) {
     alert('데이터 조회 오류: ' + (err.message || err));
@@ -1235,7 +1028,7 @@ function generateAiAdvice() {
 }
 
 /**
- * 필터 리셋 (v13.0: AI 조언 박스 대기상태 복원 및 타이머 정지)
+ * 필터 리셋 (v12.0: AI 조언 박스 대기상태 복원 및 타이머 정지)
  */
 async function resetFilters() {
   state.activeFilters = {
@@ -1270,25 +1063,18 @@ function renderDataTablePage() {
   if (state.dataPage > max) state.dataPage = max;
   const start = (state.dataPage - 1) * PAGE_SIZE_DATA;
   const pageRows = state.dataRows.slice(start, start + PAGE_SIZE_DATA);
-
+  
   const pager = $('dataPager');
   if (pager) {
     pager.classList.toggle('hidden', state.dataRows.length <= PAGE_SIZE_DATA);
   }
   const pageInfo = $('dataPageInfo');
   if (pageInfo) pageInfo.textContent = state.dataPage + ' / ' + max;
-
+  
   const resultContainer = $('dataResult');
   if (resultContainer) {
-    resultContainer.innerHTML = `
-      <div class="data-result-head">
-        <div>
-          <span class="data-result-kicker">조회 결과</span>
-          <strong>사고 데이터 목록</strong>
-        </div>
-        <span class="data-result-count">총 ${state.dataRows.length}건</span>
-      </div>
-    ` + makeDataCardList(pageRows);
+    resultContainer.innerHTML = `<p style="font-weight: 1000; color: var(--navy); font-size: 15px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">📋 사고 데이터 목록 (총 ${state.dataRows.length}건)</p>` +
+      makeRecordTable(pageRows, true);
   }
 }
 
