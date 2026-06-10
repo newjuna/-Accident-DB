@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbx9DHbRW-PtBWRHEdlYo5BKDSVcChS4h5gWpNKrDlhYhCigs9orggOCgU4blOP6_GaieQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -2052,12 +2052,17 @@ async function downloadCaptureImage() {
   showLoading('이미지 파일 생성 중입니다...');
 
   const body = $('captureBody');
+  const prevTransform = target.style.transform;
+  const prevMargin = target.style.margin;
 
   try {
     target.classList.add('capturing');
     if (body) body.classList.add('summary-exporting');
 
-    // 미리보기 축소 스타일이 제거된 뒤 원본 크기로 캡처되도록 한 프레임 대기
+    // 미리보기 축소/스크롤 영향을 제거하고 보고서 본문만 정확히 16:9로 저장합니다.
+    target.style.transform = 'none';
+    target.style.margin = '0';
+
     await new Promise(resolve => requestAnimationFrame(resolve));
 
     const canvas = await html2canvas(target, {
@@ -2065,10 +2070,12 @@ async function downloadCaptureImage() {
       backgroundColor: '#ffffff',
       useCORS: true,
       logging: false,
-      width: target.scrollWidth,
-      height: target.scrollHeight,
-      windowWidth: target.scrollWidth,
-      windowHeight: target.scrollHeight
+      width: 1280,
+      height: 720,
+      windowWidth: 1280,
+      windowHeight: 720,
+      scrollX: 0,
+      scrollY: 0
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -2083,6 +2090,8 @@ async function downloadCaptureImage() {
   } finally {
     target.classList.remove('capturing');
     if (body) body.classList.remove('summary-exporting');
+    target.style.transform = prevTransform;
+    target.style.margin = prevMargin;
     hideLoading();
   }
 }
