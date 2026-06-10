@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwmfTvaWdcwpfAkjl1vC6nTXTuFs4EVNdz7liGS4vzLIZPKBgzPvBjKPhSLgFYatXLkrw/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1658,7 +1658,7 @@ async function openCaptureMode() {
         </header>
 
         <section class="summary-kpi-row">
-          ${makeSummaryKpiCard('총 재해', `${currentTotal}건`, `<small>전월 대비 ${formatMonthlyDiff(monthDiff)}</small>`, 'shield')}
+          ${makeSummaryKpiCard('총 재해', `${currentTotal}건`, `<small>선택 월 발생 건수</small>`, 'shield')}
           ${makeSummaryKpiCard('전월 대비', `${formatMonthlyDiff(monthDiff)}`, `<small>${prevDate.year}년 ${prevDate.month} ${prevTotal}건</small>`, 'down')}
           ${makeSummaryKpiCard('연간 누적', `${yearlyTotal}건`, `<small>${selectedYear}년 누적 기준</small>`, 'growth')}
         </section>
@@ -2051,14 +2051,24 @@ async function downloadCaptureImage() {
 
   showLoading('이미지 파일 생성 중입니다...');
 
+  const body = $('captureBody');
+
   try {
     target.classList.add('capturing');
+    if (body) body.classList.add('summary-exporting');
+
+    // 미리보기 축소 스타일이 제거된 뒤 원본 크기로 캡처되도록 한 프레임 대기
+    await new Promise(resolve => requestAnimationFrame(resolve));
 
     const canvas = await html2canvas(target, {
       scale: 2,
       backgroundColor: '#ffffff',
       useCORS: true,
-      logging: false
+      logging: false,
+      width: target.scrollWidth,
+      height: target.scrollHeight,
+      windowWidth: target.scrollWidth,
+      windowHeight: target.scrollHeight
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -2072,6 +2082,7 @@ async function downloadCaptureImage() {
     alert('이미지 다운로드 중 오류 발생: ' + (err.message || err));
   } finally {
     target.classList.remove('capturing');
+    if (body) body.classList.remove('summary-exporting');
     hideLoading();
   }
 }
