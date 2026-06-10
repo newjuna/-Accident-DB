@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbzBe9jefaJ1xPIkE9TCPU3NvtOqORihzdmhfgyVVXxhMNNH0Z_5rKR_-haBC8cQD7lnFg/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1717,6 +1717,8 @@ function buildSummarySvgReport(ctx) {
   const axisMax = Math.ceil(maxVal / 5) * 5;
   const topTypeName = typeRows[0] ? typeRows[0].label : '-';
   const topDeptName = deptRows[0] ? deptRows[0].label : '-';
+  const currentYtd = monthlyValues.slice(0, ctx.monthNum).reduce((s, n) => s + Number(n || 0), 0);
+  const prevYearYtd = prevYearValues.slice(0, ctx.monthNum).reduce((s, n) => s + Number(n || 0), 0);
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
@@ -1732,7 +1734,6 @@ function buildSummarySvgReport(ctx) {
       .panel-title { font-size: 19px; font-weight: 900; }
       .small { font-size: 13px; font-weight: 800; }
       .label { font-size: 15px; font-weight: 800; }
-      .num { font-size: 29px; font-weight: 900; }
       .shadow { filter: drop-shadow(0px 4px 8px rgba(0,0,0,.12)); }
     </style>
     <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
@@ -1758,78 +1759,73 @@ function buildSummarySvgReport(ctx) {
     <text x="640" y="72" text-anchor="middle" class="title navy">${svgEsc(ctx.year)}년 ${svgEsc(ctx.monthText)} 산업재해 <tspan class="red">현황</tspan></text>
     <text x="640" y="102" text-anchor="middle" class="sub dark">${svgEsc(ctx.division)} / 기준: ${svgEsc(ctx.year)}.${String(ctx.monthNum).padStart(2,'0')}.01 ~ ${svgEsc(ctx.year)}.${String(ctx.monthNum).padStart(2,'0')}.${monthLastDay}</text>
 
-    ${buildKpiSvg(ctx)}
-
+    ${buildKpiSvg({ ...ctx, currentYtd, prevYearYtd })}
     ${buildTrendSvg(mixedValues, monthlyValues, ctx.monthNum, axisMax, ctx.year)}
     ${buildDonutSvg(allTypeRows, ctx.monthText)}
-    ${buildTopListSvg(typeRows, 42, 572, '재해유형 TOP 3')}
-    ${buildTopListSvg(deptRows, 430, 572, '영업부별 재해 TOP 3')}
-    ${buildPointSvg(ctx, topTypeName, topDeptName)}
+    ${buildTopListSvg(typeRows, 36, 522, '재해유형 TOP 3')}
+    ${buildTopListSvg(deptRows, 432, 522, '영업부별 재해 TOP 3')}
+    ${buildPointSvg(ctx, topTypeName, topDeptName, 828, 522, 414, 168)}
   </g>
 </svg>`;
 }
 
 function buildKpiSvg(ctx) {
   const diffText = formatMonthlyDiff(ctx.monthDiff);
+  const yoyText = formatYoyText(ctx.currentYtd, ctx.prevYearYtd);
   return `
   <g class="shadow">
-    <rect x="72" y="128" width="1136" height="86" rx="18" fill="#ffffff" stroke="#d9d9d9"/>
-    <line x1="454" y1="142" x2="454" y2="200" stroke="#d9d9d9" stroke-width="2"/>
-    <line x1="836" y1="142" x2="836" y2="200" stroke="#d9d9d9" stroke-width="2"/>
+    <rect x="72" y="128" width="1136" height="92" rx="18" fill="#ffffff" stroke="#d9d9d9"/>
+    <line x1="640" y1="144" x2="640" y2="204" stroke="#d9d9d9" stroke-width="2"/>
 
-    ${shieldIconSvg(102, 145)}
-    <text x="186" y="162" class="dark" font-size="20" font-weight="900">총 재해</text>
-    <text x="186" y="192" class="red" font-size="31" font-weight="900">${ctx.currentTotal}건</text>
-    <text x="186" y="210" class="muted small">선택 월 발생 건수</text>
+    ${shieldIconSvg(116, 151, 52)}
+    <text x="188" y="163" class="dark" font-size="21" font-weight="900">총 재해</text>
+    <text x="188" y="192" class="red" font-size="33" font-weight="900">${ctx.currentTotal}건</text>
+    <text x="188" y="212" class="muted" font-size="14" font-weight="800">(전월 대비 ${svgEsc(diffText)})</text>
 
-    ${downIconSvg(478, 145)}
-    <text x="562" y="162" class="dark" font-size="20" font-weight="900">전월 대비</text>
-    <text x="562" y="192" class="navy" font-size="31" font-weight="900">${svgEsc(diffText)}</text>
-    <text x="562" y="210" class="muted small">${svgEsc(ctx.prevDate.year)}년 ${svgEsc(ctx.prevDate.month)} ${ctx.prevTotal}건</text>
-
-    ${growthIconSvg(860, 145)}
-    <text x="944" y="162" class="dark" font-size="20" font-weight="900">연간 누적</text>
-    <text x="944" y="192" class="navy" font-size="31" font-weight="900">${ctx.yearlyTotal}건</text>
-    <text x="944" y="210" class="muted small">${svgEsc(ctx.year)}년 누적 기준</text>
+    ${growthIconSvg(690, 151, 52)}
+    <text x="762" y="163" class="dark" font-size="21" font-weight="900">연간 누적</text>
+    <text x="762" y="192" class="navy" font-size="33" font-weight="900">${ctx.currentYtd}건</text>
+    <text x="762" y="212" class="muted" font-size="14" font-weight="800">(전년 동기 누적 대비 ${svgEsc(yoyText)})</text>
   </g>`;
 }
 
-function shieldIconSvg(x, y) {
-  return `<g transform="translate(${x},${y})"><path fill="#ff1a1a" d="M32 0l26 9v22c0 18-10 32-26 42C16 63 6 49 6 31V9z"/><path fill="#fff" d="M27 14h10v14h14v10H37v14H27V38H13V28h14z"/></g>`;
+function shieldIconSvg(x, y, size = 52) {
+  const s = size / 64;
+  return `<g transform="translate(${x},${y}) scale(${s})"><path fill="#ff1a1a" d="M32 0l26 9v22c0 18-10 32-26 42C16 63 6 49 6 31V9z"/><path fill="#fff" d="M27 14h10v14h14v10H37v14H27V38H13V28h14z"/></g>`;
 }
-function downIconSvg(x, y) {
-  return `<g transform="translate(${x},${y})"><circle cx="35" cy="35" r="35" fill="#0b2f86"/><path fill="#fff" d="M30 12h10v30h14L35 61 16 42h14z"/></g>`;
+function downIconSvg(x, y, size = 52) {
+  const s = size / 70;
+  return `<g transform="translate(${x},${y}) scale(${s})"><circle cx="35" cy="35" r="35" fill="#0b2f86"/><path fill="#fff" d="M30 12h10v30h14L35 61 16 42h14z"/></g>`;
 }
-function growthIconSvg(x, y) {
-  return `<g transform="translate(${x},${y})"><circle cx="35" cy="35" r="35" fill="#0b2f86"/><rect x="17" y="37" width="9" height="18" rx="1" fill="#fff"/><rect x="31" y="28" width="9" height="27" rx="1" fill="#fff"/><rect x="45" y="18" width="9" height="37" rx="1" fill="#fff"/><path d="M17 26l12-9 9 8 14-14" stroke="#fff" stroke-width="4" fill="none"/></g>`;
+function growthIconSvg(x, y, size = 52) {
+  const s = size / 70;
+  return `<g transform="translate(${x},${y}) scale(${s})"><circle cx="35" cy="35" r="35" fill="#0b2f86"/><rect x="17" y="37" width="9" height="18" rx="1" fill="#fff"/><rect x="31" y="28" width="9" height="27" rx="1" fill="#fff"/><rect x="45" y="18" width="9" height="37" rx="1" fill="#fff"/><path d="M17 26l12-9 9 8 14-14" stroke="#fff" stroke-width="4" fill="none"/></g>`;
 }
 
 function buildTrendSvg(mixedValues, monthlyValues, monthNum, axisMax, yearText) {
-  const x = 36, y = 236, w = 845, h = 290;
-  const chartX = x + 42, chartY = y + 54, chartW = w - 78, chartH = 165;
+  const x = 36, y = 246, w = 820, h = 250;
+  const chartX = x + 26, chartY = y + 52, chartW = w - 52, chartH = 138;
   const gap = chartW / 12;
   let bars = '';
   for (let i = 0; i < 12; i++) {
     const val = mixedValues[i] || 0;
     const bh = Math.max(4, (val / axisMax) * chartH);
-    const bx = chartX + i * gap + 12;
+    const bx = chartX + i * gap + 11;
     const by = chartY + chartH - bh;
     const color = (i + 1 === monthNum) ? 'url(#redGrad)' : ((i + 1 < monthNum) ? 'url(#navyGrad)' : '#d9d9d9');
-    bars += `<text x="${bx+18}" y="${by-8}" text-anchor="middle" class="dark" font-size="14" font-weight="900">${val}</text><rect x="${bx}" y="${by}" width="36" height="${bh}" rx="2" fill="${color}"/><text x="${bx+18}" y="${chartY+chartH+28}" text-anchor="middle" class="dark label">${i+1}월</text>`;
+    bars += `<text x="${bx+16}" y="${by-7}" text-anchor="middle" class="dark" font-size="14" font-weight="900">${val}</text><rect x="${bx}" y="${by}" width="32" height="${bh}" rx="2" fill="${color}"/><text x="${bx+16}" y="${chartY+chartH+26}" text-anchor="middle" class="dark" font-size="14" font-weight="900">${i+1}월</text>`;
   }
-
   const actual = monthlyValues.slice(0, monthNum);
   const linePoints = actual.map((v, i) => {
-    const px = chartX + i * gap + 30;
+    const px = chartX + i * gap + 27;
     const py = chartY + chartH - ((v || 0) / axisMax) * chartH;
     return `${px},${py}`;
   }).join(' ');
   const dots = actual.map((v, i) => {
-    const px = chartX + i * gap + 30;
+    const px = chartX + i * gap + 27;
     const py = chartY + chartH - ((v || 0) / axisMax) * chartH;
     return `<circle cx="${px}" cy="${py}" r="5" fill="#ff1a1a"/>`;
   }).join('');
-
   return `
   <g>
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="#fff" stroke="#d9d9d9"/>
@@ -1838,39 +1834,45 @@ function buildTrendSvg(mixedValues, monthlyValues, monthNum, axisMax, yearText) 
     ${bars}
     <polyline points="${linePoints}" fill="none" stroke="#ff1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 9"/>
     ${dots}
-    <rect x="${chartX+230}" y="${y+h-28}" width="14" height="10" fill="#0b2f86"/><text x="${chartX+250}" y="${y+h-18}" class="small dark">실적</text>
-    <line x1="${chartX+315}" y1="${y+h-23}" x2="${chartX+355}" y2="${y+h-23}" stroke="#ff1a1a" stroke-width="4" stroke-dasharray="3 8"/><text x="${chartX+365}" y="${y+h-18}" class="small dark">추세선</text>
-    <rect x="${chartX+450}" y="${y+h-28}" width="14" height="10" fill="#d9d9d9"/><text x="${chartX+470}" y="${y+h-18}" class="small dark">과거건수</text>
+    <rect x="${chartX+215}" y="${y+h-25}" width="14" height="10" fill="#0b2f86"/><text x="${chartX+236}" y="${y+h-16}" class="small dark">실적</text>
+    <line x1="${chartX+300}" y1="${y+h-20}" x2="${chartX+340}" y2="${y+h-20}" stroke="#ff1a1a" stroke-width="4" stroke-dasharray="3 8"/><text x="${chartX+350}" y="${y+h-16}" class="small dark">추세선</text>
+    <rect x="${chartX+430}" y="${y+h-25}" width="14" height="10" fill="#d9d9d9"/><text x="${chartX+450}" y="${y+h-16}" class="small dark">과거건수</text>
   </g>`;
 }
 
 function buildDonutSvg(rows, monthText) {
-  const x = 902, y = 236, w = 340, h = 290;
-  const usable = (rows || []).filter(r => r.label !== '미분류').slice(0, 5);
+  const x = 878, y = 246, w = 364, h = 250;
+  let usable = (rows || []).filter(r => r.label !== '미분류').slice(0, 5);
+  if (usable.length > 4) {
+    const keep = usable.slice(0, 4);
+    const etcCount = usable.slice(4).reduce((s, r) => s + Number(r.count || 0), 0);
+    if (etcCount > 0) keep.push({ label: '기타', count: etcCount });
+    usable = keep;
+  }
   const total = Math.max(1, usable.reduce((s, r) => s + Number(r.count || 0), 0));
   const colors = ['#0b2f86', '#ff1a1a', '#a9a9a9', '#d9d9d9', '#eeeeee'];
   let paths = '';
   let start = -90;
   usable.forEach((r, i) => {
     const angle = (Number(r.count || 0) / total) * 360;
-    paths += donutSlicePath(1070, 370, 92, 48, start, start + angle, colors[i]);
+    paths += donutSlicePath(1035, 370, 82, 42, start, start + angle, colors[i]);
     start += angle;
   });
-
+  const legendBaseY = 440;
+  const legendGap = 18;
   const legend = usable.map((r, i) => {
     const pct = ((Number(r.count || 0) / total) * 100).toFixed(1);
-    return `<circle cx="928" cy="${458 + i*23}" r="5" fill="${colors[i]}"/><text x="942" y="${463+i*23}" class="small dark">${svgEsc(shortSvgText(r.label, 10))}</text><text x="1200" y="${463+i*23}" text-anchor="end" class="small dark">${pct}%</text>`;
+    return `<circle cx="904" cy="${legendBaseY + i*legendGap}" r="5" fill="${colors[i]}"/><text x="918" y="${legendBaseY + 5 + i*legendGap}" class="small dark">${svgEsc(shortSvgText(r.label, 9))}</text><text x="1218" y="${legendBaseY + 5 + i*legendGap}" text-anchor="end" class="small dark">${pct}%</text>`;
   }).join('');
-
   return `
   <g>
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="#fff" stroke="#d9d9d9"/>
     <text x="${x+18}" y="${y+30}" class="panel-title navy">${svgEsc(monthText)} 재해유형 비중</text>
     <text x="${x+18}" y="${y+48}" class="muted" font-size="11" font-weight="800">선택 월 기준</text>
     ${paths}
-    <circle cx="1070" cy="370" r="49" fill="#fff"/>
-    <text x="1070" y="362" text-anchor="middle" class="dark" font-size="24" font-weight="900">주요</text>
-    <text x="1070" y="392" text-anchor="middle" class="dark" font-size="24" font-weight="900">유형</text>
+    <circle cx="1035" cy="370" r="43" fill="#fff"/>
+    <text x="1035" y="362" text-anchor="middle" class="dark" font-size="22" font-weight="900">주요</text>
+    <text x="1035" y="390" text-anchor="middle" class="dark" font-size="22" font-weight="900">유형</text>
     ${legend}
   </g>`;
 }
@@ -1889,35 +1891,34 @@ function polar(cx, cy, r, angle) {
 }
 
 function buildTopListSvg(rows, x, y, title) {
-  const w = 360, h = 126;
+  const w = 380, h = 168;
   const max = Math.max(1, ...(rows || []).map(r => Number(r.count || 0)));
   const colors = ['#0b2f86', '#ff1a1a', '#a9a9a9'];
   const items = (rows || []).slice(0, 3).map((r, i) => {
-    const yy = y + 44 + i * 27;
-    const bw = Math.max(24, Math.round((Number(r.count || 0) / max) * 144));
+    const top = y + 44 + i * 40;
+    const bw = Math.max(26, Math.round((Number(r.count || 0) / max) * 220));
     return `
-      <circle cx="${x+28}" cy="${yy-4}" r="12" fill="${colors[i]}"/>
-      <text x="${x+28}" y="${yy+1}" text-anchor="middle" fill="#fff" font-size="13" font-weight="900">${i+1}</text>
-      <text x="${x+52}" y="${yy+1}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 13))}</text>
-      <text x="${x+328}" y="${yy+1}" text-anchor="end" class="dark" font-size="15" font-weight="900">${r.count}건</text>
-      <rect x="${x+52}" y="${yy+9}" width="220" height="8" rx="4" fill="#efefef"/>
-      <rect x="${x+52}" y="${yy+9}" width="${bw}" height="8" rx="4" fill="${colors[i]}"/>
+      <circle cx="${x+26}" cy="${top+2}" r="12" fill="${colors[i]}"/>
+      <text x="${x+26}" y="${top+7}" text-anchor="middle" fill="#fff" font-size="13" font-weight="900">${i+1}</text>
+      <text x="${x+48}" y="${top+7}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 16))}</text>
+      <text x="${x+w-18}" y="${top+7}" text-anchor="end" class="dark" font-size="15" font-weight="900">${r.count}건</text>
+      <rect x="${x+48}" y="${top+17}" width="260" height="8" rx="4" fill="#efefef"/>
+      <rect x="${x+48}" y="${top+17}" width="${bw}" height="8" rx="4" fill="${colors[i]}"/>
     `;
   }).join('');
   return `<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff" stroke="#d9d9d9"/><text x="${x+16}" y="${y+29}" class="panel-title navy">${svgEsc(title)}</text>${items}</g>`;
 }
 
-function buildPointSvg(ctx, topTypeName, topDeptName) {
-  const x = 818, y = 572, w = 424, h = 126;
+function buildPointSvg(ctx, topTypeName, topDeptName, x = 828, y = 522, w = 414, h = 168) {
   const diffAbs = Math.abs(Number(ctx.monthDiff || 0));
   const diffWord = ctx.monthDiff <= 0 ? '감소' : '증가';
   return `
   <g>
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="16" fill="#fff7f7" stroke="#ffc7c7"/>
     <text x="${x+18}" y="${y+31}" class="red" font-size="20" font-weight="900">핵심 포인트</text>
-    <text x="${x+24}" y="${y+62}" class="dark" font-size="14" font-weight="900">• 전월 대비 재해 <tspan class="red" font-weight="900">${diffAbs}건 ${diffWord}</tspan></text>
-    <text x="${x+24}" y="${y+91}" class="dark" font-size="14" font-weight="900">• 최다 재해유형은 <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan></text>
-    <text x="${x+24}" y="${y+120}" class="dark" font-size="14" font-weight="900">• 집중관리 영업부 <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan></text>
+    <text x="${x+24}" y="${y+68}" class="dark" font-size="14" font-weight="900">• 전월 대비 재해 <tspan class="red" font-weight="900">${diffAbs}건 ${diffWord}</tspan></text>
+    <text x="${x+24}" y="${y+102}" class="dark" font-size="14" font-weight="900">• 최다 재해유형은 <tspan class="red" font-weight="900">${svgEsc(topTypeName)}</tspan></text>
+    <text x="${x+24}" y="${y+136}" class="dark" font-size="14" font-weight="900">• 집중관리 영업부 <tspan class="red" font-weight="900">${svgEsc(topDeptName)}</tspan></text>
   </g>`;
 }
 
@@ -1941,6 +1942,19 @@ function formatMonthlyDiff(n) {
   if (n > 0) return `▲ ${n}건`;
   if (n < 0) return `▼ ${Math.abs(n)}건`;
   return '동일';
+}
+
+function formatYoyText(currentValue, previousValue) {
+  const c = Number(currentValue || 0);
+  const p = Number(previousValue || 0);
+  if (p <= 0) {
+    if (c <= 0) return '동일';
+    return '비교값 없음';
+  }
+  const pct = ((c - p) / p) * 100;
+  if (Math.abs(pct) < 0.05) return '동일';
+  const abs = Math.abs(pct).toFixed(1);
+  return pct > 0 ? `▲ ${abs}% 증가` : `▼ ${abs}% 감소`;
 }
 
 function getMonthlyDiffClass(n) {
