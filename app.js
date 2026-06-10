@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbyWF0DgMljSJrllIqebHXxJp0goBp4Q4yW6oGoifxDYxs6PSrb-t3T7UdLu316XdaKR_w/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1396,6 +1396,39 @@ function buildExcelFileName() {
   return parts.join('_') + '.xlsx';
 }
 
+function getTextWidth(value) {
+  const text = String(value ?? '');
+  // 한글은 영문보다 넓게 계산해서 열너비를 넉넉하게 잡습니다.
+  let width = 0;
+  for (const ch of text) {
+    width += /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(ch) ? 1.8 : 1;
+  }
+  return width;
+}
+
+function getAutoColumnWidths(aoa) {
+  const minWidths = [6, 12, 12, 12, 18, 12, 36];
+  const maxWidths = [8, 16, 18, 20, 34, 18, 100];
+  const colCount = aoa[0].length;
+
+  const widths = [];
+  for (let c = 0; c < colCount; c++) {
+    let maxLen = minWidths[c] || 10;
+    aoa.forEach(row => {
+      const cell = row[c] ?? '';
+      const len = getTextWidth(cell);
+      if (len > maxLen) maxLen = len;
+    });
+    widths.push({ wch: Math.min(Math.ceil(maxLen + 3), maxWidths[c] || 40) });
+  }
+  return widths;
+}
+
+function applyExcelCellStyle(ws, cellAddress, style) {
+  if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
+  ws[cellAddress].s = style;
+}
+
 function downloadDataExcel() {
   const rows = state.dataRows || [];
   if (!rows.length) {
@@ -1408,43 +1441,116 @@ function downloadDataExcel() {
     return;
   }
 
+  const fileName = buildExcelFileName();
+  const title = fileName.replace(/\.xlsx$/i, '');
+
   const header = ['No', '재해일자', '영업부', '팀', '매장명', '재해유형', '사고내용'];
-  const aoa = [header];
+  const dataRows = rows.map((r, i) => ([
+    i + 1,
+    r.accidentDate || '',
+    cleanDeptName(r.stdDept || ''),
+    r.stdTeam || '',
+    r.store || '',
+    r.accidentType || '',
+    r.accidentContent || ''
+  ]));
 
-  rows.forEach((r, i) => {
-    aoa.push([
-      i + 1,
-      r.accidentDate || '',
-      cleanDeptName(r.stdDept || ''),
-      r.stdTeam || '',
-      r.store || '',
-      r.accidentType || '',
-      r.accidentContent || ''
-    ]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // 열 너비 설정
-  ws['!cols'] = [
-    { wch: 6 },
-    { wch: 14 },
-    { wch: 16 },
-    { wch: 18 },
-    { wch: 26 },
-    { wch: 16 },
-    { wch: 80 }
+  // A1 제목, A4부터 표 시작
+  const aoa = [
+    [title],
+    [],
+    [],
+    header,
+    ...dataRows
   ];
 
-  // 첫 행 고정 + 필터
-  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
-  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: header.length - 1 } }) };
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const lastRow = aoa.length;
+  const lastCol = header.length;
+  const tableStartRow = 4; // Excel 기준 행 번호
+  const tableEndRow = lastRow;
+
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: lastCol - 1 } }
+  ];
+
+  ws['!cols'] = getAutoColumnWidths([header, ...dataRows]);
+
+  // 제목 스타일: A1
+  applyExcelCellStyle(ws, 'A1', {
+    font: { name: '맑은 고딕', bold: true, sz: 20, color: { rgb: '000000' } },
+    alignment: { horizontal: 'left', vertical: 'center' }
+  });
+
+  ws['!rows'] = ws['!rows'] || [];
+  ws['!rows'][0] = { hpt: 30 };
+  ws['!rows'][3] = { hpt: 22 };
+
+  const borderStyle = {
+    top: { style: 'thin', color: { rgb: '808080' } },
+    bottom: { style: 'thin', color: { rgb: '808080' } },
+    left: { style: 'thin', color: { rgb: '808080' } },
+    right: { style: 'thin', color: { rgb: '808080' } }
+  };
+
+  const headerStyle = {
+    font: { name: '맑은 고딕', bold: true, sz: 11, color: { rgb: '000000' } },
+    fill: { patternType: 'solid', fgColor: { rgb: 'DCE6F1' } },
+    border: borderStyle,
+    alignment: { horizontal: 'center', vertical: 'center' }
+  };
+
+  const bodyStyle = {
+    font: { name: '맑은 고딕', sz: 10, color: { rgb: '000000' } },
+    border: borderStyle,
+    alignment: { vertical: 'top', wrapText: true }
+  };
+
+  const bodyCenterStyle = {
+    font: { name: '맑은 고딕', sz: 10, color: { rgb: '000000' } },
+    border: borderStyle,
+    alignment: { horizontal: 'center', vertical: 'top', wrapText: true }
+  };
+
+  // A4:G마지막행 스타일 적용: 바깥쪽/안쪽 윤곽선 모두 적용
+  for (let r = tableStartRow; r <= tableEndRow; r++) {
+    for (let c = 1; c <= lastCol; c++) {
+      const addr = XLSX.utils.encode_cell({ r: r - 1, c: c - 1 });
+      if (r === tableStartRow) {
+        applyExcelCellStyle(ws, addr, headerStyle);
+      } else {
+        // No, 날짜, 영업부, 팀, 재해유형은 가운데 정렬 / 매장명, 사고내용은 좌측 정렬
+        const style = [1, 2, 3, 4, 6].includes(c) ? bodyCenterStyle : bodyStyle;
+        applyExcelCellStyle(ws, addr, style);
+      }
+    }
+  }
+
+  // 사고내용 열은 길게 보이도록 줄바꿈
+  for (let r = tableStartRow + 1; r <= tableEndRow; r++) {
+    const gAddr = XLSX.utils.encode_cell({ r: r - 1, c: 6 });
+    if (ws[gAddr]) {
+      ws[gAddr].s = {
+        ...bodyStyle,
+        alignment: { vertical: 'top', wrapText: true }
+      };
+    }
+  }
+
+  // 첫 표 행 고정 + 필터
+  ws['!freeze'] = { xSplit: 0, ySplit: 4 };
+  ws['!autofilter'] = {
+    ref: XLSX.utils.encode_range({
+      s: { r: tableStartRow - 1, c: 0 },
+      e: { r: tableEndRow - 1, c: lastCol - 1 }
+    })
+  };
 
   const wb = XLSX.utils.book_new();
   const sheetName = '조회결과_' + rows.length + '건';
   XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
 
-  XLSX.writeFile(wb, buildExcelFileName(), { bookType: 'xlsx' });
+  XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
 }
 window.downloadDataExcel = downloadDataExcel;
 
