@@ -22,7 +22,7 @@
   <!-- 로그인 화면 -->
   <section id="loginView" class="login-wrap">
     <div class="login-card">
-      <div class="brand-logo"><span>ASUNG</span><em>DAISO</em></div>
+      <img src="https://www.daiso.co.kr/assets/images/img-logo-asung-color.png" alt="ASUNG DAISO" class="brand-logo-img">
       <h1>산업재해 현황 분석 대시보드</h1>
       <p>영업부문별 산재 현황을 조회합니다.</p>
       <label for="loginDivision">영업부문 선택</label>
@@ -42,7 +42,7 @@
 
     <!-- 사이드바 -->
     <aside class="sidebar">
-      <div class="side-logo"><strong>ASUNG</strong><span>DAISO</span></div>
+      <img src="https://www.daiso.co.kr/assets/images/img-logo-asung-color.png" alt="ASUNG DAISO" class="side-logo-img">
       <div id="sideDivision" class="division-pill">-</div>
       <button class="nav active" data-view="dashboard">대시보드</button>
       <button class="nav" data-view="data">데이터 조회</button>
@@ -63,11 +63,10 @@
           <div class="filters">
             <label>기준연도<select id="dashYear"></select></label>
             <label>기준월<select id="dashMonth"></select></label>
-            <button id="dashSearchBtn">조회</button>
           </div>
         </header>
 
-        <!-- KPI 카드 -->
+        <!-- KPI 카드 3개 -->
         <div class="kpi-grid">
           <div class="kpi-card">
             <span>총 재해 건수</span>
@@ -75,14 +74,9 @@
             <small>출퇴근재해 제외</small>
           </div>
           <div class="kpi-card">
-            <span>전년 동월 대비</span>
-            <strong id="kpiYoy">0건</strong>
-            <small id="kpiYoyBase">전년 기준 0건</small>
-          </div>
-          <div class="kpi-card">
-            <span>전월 대비</span>
-            <strong id="kpiPrev">-</strong>
-            <small id="kpiPrevBase">전체 선택 시 제외</small>
+            <span>전년 대비</span>
+            <strong id="kpiYoy">-</strong>
+            <small id="kpiYoySub"></small>
           </div>
           <div class="kpi-card">
             <span>최다 재해유형</span>
@@ -95,6 +89,11 @@
 
         <!-- 차트 그리드 -->
         <div class="chart-grid">
+          <!-- 3개년 추이 (full width) -->
+          <div class="panel panel-wide">
+            <h3>3개년 월별 재해 추이</h3>
+            <div class="chart-container chart-wide"><canvas id="trendChart"></canvas></div>
+          </div>
           <div class="panel">
             <h3>재해유형별 건수</h3>
             <div class="chart-container"><canvas id="typeChart"></canvas></div>
