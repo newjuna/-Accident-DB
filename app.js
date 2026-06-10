@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxb6-d2QzYQtKVR2zU-L9LVq5dh2AyuGJIB8uwUftZGdJhTQ9XSeJKBPLTuThOy8F4Ivg/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1372,6 +1372,82 @@ async function resetFilters() {
   if (pager) pager.classList.add('hidden');
 }
 
+
+function sanitizeExcelFileNamePart(value) {
+  return String(value || '')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '')
+    .trim() || '전체';
+}
+
+function buildExcelFileName() {
+  const f = state.activeFilters || {};
+  const parts = [
+    '산업재해_데이터조회',
+    sanitizeExcelFileNamePart(f.year || state.currentYear || '전체') + '년',
+    sanitizeExcelFileNamePart(f.month || '전체')
+  ];
+
+  if (f.dept && f.dept !== '전체') parts.push(sanitizeExcelFileNamePart(cleanDeptName(f.dept)));
+  if (f.team && f.team !== '전체') parts.push(sanitizeExcelFileNamePart(f.team));
+  if (f.storeSearch) parts.push(sanitizeExcelFileNamePart(f.storeSearch));
+  parts.push((state.dataRows || []).length + '건');
+
+  return parts.join('_') + '.xlsx';
+}
+
+function downloadDataExcel() {
+  const rows = state.dataRows || [];
+  if (!rows.length) {
+    alert('다운로드할 조회 결과가 없습니다.');
+    return;
+  }
+
+  if (typeof XLSX === 'undefined') {
+    alert('엑셀 다운로드 라이브러리를 불러오지 못했습니다. 인터넷 연결 후 다시 시도해 주세요.');
+    return;
+  }
+
+  const header = ['No', '재해일자', '영업부', '팀', '매장명', '재해유형', '사고내용'];
+  const aoa = [header];
+
+  rows.forEach((r, i) => {
+    aoa.push([
+      i + 1,
+      r.accidentDate || '',
+      cleanDeptName(r.stdDept || ''),
+      r.stdTeam || '',
+      r.store || '',
+      r.accidentType || '',
+      r.accidentContent || ''
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // 열 너비 설정
+  ws['!cols'] = [
+    { wch: 6 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 26 },
+    { wch: 16 },
+    { wch: 80 }
+  ];
+
+  // 첫 행 고정 + 필터
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: header.length - 1 } }) };
+
+  const wb = XLSX.utils.book_new();
+  const sheetName = '조회결과_' + rows.length + '건';
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+
+  XLSX.writeFile(wb, buildExcelFileName(), { bookType: 'xlsx' });
+}
+window.downloadDataExcel = downloadDataExcel;
+
 function renderDataTablePage() {
   const max = Math.max(1, Math.ceil(state.dataRows.length / PAGE_SIZE_DATA));
   if (state.dataPage > max) state.dataPage = max;
@@ -1387,13 +1463,20 @@ function renderDataTablePage() {
 
   const resultContainer = $('dataResult');
   if (resultContainer) {
+    const excelButtonHtml = state.dataRows.length > 0
+      ? `<button type="button" class="excel-download-btn" onclick="downloadDataExcel()">📥 엑셀 다운로드</button>`
+      : '';
+
     resultContainer.innerHTML = `
       <div class="data-result-head">
         <div>
           <span class="data-result-kicker">조회 결과</span>
           <strong>사고 데이터 목록</strong>
         </div>
-        <span class="data-result-count">총 ${state.dataRows.length}건</span>
+        <div class="data-result-actions">
+          <span class="data-result-count">총 ${state.dataRows.length}건</span>
+          ${excelButtonHtml}
+        </div>
       </div>
     ` + makeDataCardList(pageRows);
   }

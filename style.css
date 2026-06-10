@@ -2005,3 +2005,49 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
     flex-wrap: wrap;
   }
 }
+
+
+/* ============================================================
+   v14 데이터 조회 엑셀 다운로드 버튼
+   - 조회 결과가 있을 때만 app.js에서 버튼 표시
+   - 현재 페이지 10건이 아니라 전체 조회 결과를 다운로드
+   ============================================================ */
+.data-result-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.excel-download-btn {
+  min-height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0FA36B, #047857);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 1000;
+  padding: 8px 14px;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15,163,107,.18);
+  transition: .16s ease;
+  white-space: nowrap;
+}
+
+.excel-download-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 22px rgba(15,163,107,.24);
+}
+
+@media (max-width: 768px) {
+  .data-result-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .excel-download-btn {
+    width: 100%;
+  }
+}
