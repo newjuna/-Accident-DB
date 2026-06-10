@@ -7,6 +7,7 @@
   <meta name="description" content="아성다이소 안전보건팀 산업재해 현황 분석 대시보드">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 </head>
 <body>
 
@@ -42,7 +43,9 @@
 
     <!-- 사이드바 -->
     <aside class="sidebar">
-      <img src="logo.png" alt="ASUNG DAISO" class="side-logo-img">
+      <div class="side-logo-container">
+        <img src="logo.png" alt="ASUNG DAISO" class="side-logo-img">
+      </div>
       <div id="sideDivision" class="division-pill">-</div>
       <button class="nav active" data-view="dashboard">대시보드</button>
       <button class="nav" data-view="data">데이터 조회</button>
@@ -68,20 +71,21 @@
 
         <!-- KPI 카드 3개 -->
         <div class="kpi-grid">
-          <div class="kpi-card">
+          <div class="kpi-card kpi-card-total">
             <span>총 재해 건수</span>
             <strong id="kpiTotal">0건</strong>
-            <small>출퇴근재해 제외</small>
+            <div class="kpi-yoy-box">
+              <span id="kpiYoy" class="kpi-yoy-val">-</span>
+              <small id="kpiYoySub"></small>
+            </div>
           </div>
           <div class="kpi-card">
-            <span>전년 대비</span>
-            <strong id="kpiYoy">-</strong>
-            <small id="kpiYoySub"></small>
+            <span>영업부별 재해 TOP 3</span>
+            <div id="kpiTopDeptList" class="kpi-top-list">-</div>
           </div>
           <div class="kpi-card">
-            <span>최다 재해유형</span>
-            <strong id="kpiTopType">-</strong>
-            <small id="kpiTopTypeCount">0건</small>
+            <span>재해유형 TOP 3</span>
+            <div id="kpiTopTypeList" class="kpi-top-list">-</div>
           </div>
         </div>
 
@@ -137,9 +141,17 @@
             <label>매장<select id="filterStore"><option value="전체">전체</option></select></label>
             <label>재해유형<select id="filterType"><option value="전체">전체</option></select></label>
             <label>매장명 검색<input id="filterStoreSearch" placeholder="매장명 입력"></label>
-            <button id="dataSearchBtn">조회</button>
+            <div class="btn-group">
+              <button id="dataSearchBtn">조회</button>
+              <button id="filterResetBtn" class="btn-sub">초기화</button>
+            </div>
           </div>
           <div id="dataResult" class="table-wrap"></div>
+          <div id="dataPager" class="pager hidden">
+            <button id="dataPrev">이전</button>
+            <span id="dataPageInfo">1 / 1</span>
+            <button id="dataNext">다음</button>
+          </div>
         </div>
       </section>
 
@@ -147,12 +159,19 @@
       <section id="repeatPage" class="page hidden">
         <header class="topbar">
           <div>
-            <h2>반복사고 매장 전체</h2>
-            <p>최근 1년간 동일 매장 2건 이상 사고 발생 매장입니다.</p>
+            <h2>반복사고 현황 및 분포</h2>
+            <p>최근 1년간 동일 매장 2건 이상 사고 발생 현황 및 영업부별 분포 맵입니다.</p>
           </div>
         </header>
-        <div class="panel">
-          <div id="repeatFullList" class="table-wrap"></div>
+        <div class="map-and-list-grid">
+          <div class="panel map-panel">
+            <h3>영업부별 반복사고 분포 맵</h3>
+            <div id="visualRegionMap" class="region-map-grid"></div>
+          </div>
+          <div class="panel">
+            <h3>반복사고 발생 매장 리스트</h3>
+            <div id="repeatFullList" class="table-wrap"></div>
+          </div>
         </div>
       </section>
 
