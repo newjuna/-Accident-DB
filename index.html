@@ -20,6 +20,13 @@
       <div class="spinner"></div>
       <div class="loader-title">조회 중입니다</div>
       <div class="loader-sub">데이터를 불러오는 중입니다. 잠시만 기다려주세요.</div>
+      <div class="loader-progress-wrap" aria-hidden="true">
+        <div id="loaderProgressBar" class="loader-progress-bar"></div>
+      </div>
+      <div class="loader-progress-meta">
+        <span id="loaderStepText">작업을 준비하고 있습니다.</span>
+        <b id="loaderPercent">0%</b>
+      </div>
     </div>
   </div>
 
@@ -312,6 +319,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20"></script>
+  <script src="app.js?v=21"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxXHak1xrV7VgVvCnSagV4B85KOAmMN76MQirLzjh0DGucmNglP6CbDes6B_s75wz-uHQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -95,20 +95,114 @@ const PAGE_SIZE_APPROVAL = 10;
 // AI 조언용 5초 타이머 디바운싱용 전역 핸들
 let aiAdviceTimer = null; 
 let typewriterInterval = null; 
+let loadingProgressTimer = null;
+let loadingHideTimer = null;
+let loadingProgressValue = 0;
+let loadingToken = 0;
+let loadingStageList = [];
 
 /* ============ 유틸리티 ============ */
 function $(id) { return document.getElementById(id); }
 
+function getLoadingStages(msg) {
+  const text = String(msg || '');
+
+  if (text.includes('로그인')) {
+    return ['접속 정보를 확인하고 있습니다.', '권한을 확인하고 있습니다.', '화면 진입을 준비하고 있습니다.'];
+  }
+  if (text.includes('초기')) {
+    return ['연도·월 정보를 불러오고 있습니다.', '조직 기준을 확인하고 있습니다.', '첫 화면 데이터를 정리하고 있습니다.'];
+  }
+  if (text.includes('대시보드')) {
+    return ['데이터를 요청하고 있습니다.', '출퇴근재해 제외 기준을 적용하고 있습니다.', '카드와 그래프를 생성하고 있습니다.', '화면에 반영하고 있습니다.'];
+  }
+  if (text.includes('데이터 조회') || text.includes('데이터를 조회')) {
+    return ['조회 조건을 확인하고 있습니다.', '대상 데이터를 불러오고 있습니다.', '목록을 정리하고 있습니다.', '결과 화면을 구성하고 있습니다.'];
+  }
+  if (text.includes('중상해') || text.includes('91일')) {
+    return ['근로손실일수를 확인하고 있습니다.', '91일 이상 재해를 선별하고 있습니다.', '매장별 목록을 정리하고 있습니다.', '결과 화면을 구성하고 있습니다.'];
+  }
+  if (text.includes('상세')) {
+    return ['사고번호를 확인하고 있습니다.', '사고 상세 내용을 불러오고 있습니다.', '상세보기 화면을 구성하고 있습니다.'];
+  }
+  if (text.includes('요약')) {
+    return ['요약 데이터를 불러오고 있습니다.', '카드와 그래프를 이미지로 구성하고 있습니다.', '미리보기 화면을 준비하고 있습니다.'];
+  }
+  if (text.includes('이미지') || text.includes('ZIP')) {
+    return ['화면 이미지를 변환하고 있습니다.', '파일을 생성하고 있습니다.', '다운로드를 준비하고 있습니다.'];
+  }
+  if (text.includes('사고 리스트')) {
+    return ['선택한 조건을 확인하고 있습니다.', '사고 목록을 불러오고 있습니다.', '팝업 화면을 구성하고 있습니다.'];
+  }
+  return ['작업을 준비하고 있습니다.', '데이터를 처리하고 있습니다.', '화면에 반영하고 있습니다.'];
+}
+
+function updateLoadingProgress(percent, stageText) {
+  loadingProgressValue = Math.max(0, Math.min(100, Math.round(percent || 0)));
+
+  const bar = $('loaderProgressBar');
+  const percentEl = $('loaderPercent');
+  const stepEl = $('loaderStepText');
+
+  if (bar) bar.style.width = loadingProgressValue + '%';
+  if (percentEl) percentEl.textContent = loadingProgressValue + '%';
+
+  const stages = loadingStageList.length ? loadingStageList : ['작업을 처리하고 있습니다.'];
+  const idx = Math.min(stages.length - 1, Math.floor((loadingProgressValue / 100) * stages.length));
+  if (stepEl) stepEl.textContent = stageText || stages[idx] || stages[0];
+}
+
 function showLoading(msg) {
+  loadingToken += 1;
+  const token = loadingToken;
+
+  if (loadingHideTimer) {
+    clearTimeout(loadingHideTimer);
+    loadingHideTimer = null;
+  }
+  if (loadingProgressTimer) {
+    clearInterval(loadingProgressTimer);
+    loadingProgressTimer = null;
+  }
+
+  loadingProgressValue = 0;
+  loadingStageList = getLoadingStages(msg);
+
   const overlay = $('loadingOverlay');
   if (overlay) overlay.classList.remove('hidden');
+
   const loaderTitle = document.querySelector('.loader-title');
+  const loaderSub = document.querySelector('.loader-sub');
   if (loaderTitle && msg) loaderTitle.textContent = msg;
+  if (loaderSub) loaderSub.textContent = '잠시만 기다려주세요. 현재 진행 상태를 표시하고 있습니다.';
+
+  updateLoadingProgress(6, loadingStageList[0]);
+
+  loadingProgressTimer = setInterval(() => {
+    if (token !== loadingToken) return;
+    const gap = 92 - loadingProgressValue;
+    const add = loadingProgressValue < 35 ? 5 : (loadingProgressValue < 70 ? 3 : 1);
+    const next = loadingProgressValue + Math.max(1, Math.min(add, Math.ceil(gap / 5)));
+    updateLoadingProgress(Math.min(92, next));
+  }, 420);
 }
 
 function hideLoading() {
-  const overlay = $('loadingOverlay');
-  if (overlay) overlay.classList.add('hidden');
+  const token = loadingToken;
+
+  if (loadingProgressTimer) {
+    clearInterval(loadingProgressTimer);
+    loadingProgressTimer = null;
+  }
+
+  updateLoadingProgress(100, '완료되었습니다. 화면을 전환하고 있습니다.');
+
+  loadingHideTimer = setTimeout(() => {
+    if (token !== loadingToken) return;
+    const overlay = $('loadingOverlay');
+    if (overlay) overlay.classList.add('hidden');
+    updateLoadingProgress(0, '작업을 준비하고 있습니다.');
+  }, 220);
 }
 
 async function callAPI(params) {
