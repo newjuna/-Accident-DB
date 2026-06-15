@@ -203,18 +203,18 @@
 
       <!-- ==================== 산재 승인 사고 대시보드 ==================== -->
       <section id="approvalPage" class="page hidden">
-        <header class="topbar page-titlebar approval-titlebar">
-          <div>
+        <header class="topbar dashboard-hero approval-dashboard-hero">
+          <div class="hero-copy">
             <div class="hero-kicker">WORKERS' COMPENSATION APPROVAL</div>
             <h2>산재 승인 사고 대시보드</h2>
             <p>산업재해 승인 건수, 근로손실일수, 91일 이상 재해 현황을 확인합니다.</p>
           </div>
+          <div class="filters hero-filters approval-hero-filters">
+            <div id="approvalDashboardFilters" class="approval-dashboard-filters"></div>
+            <button id="approvalSummaryBtn" class="btn-sub approval-summary-btn">요약 생성</button>
+          </div>
         </header>
 
-        <div class="approval-dashboard-tools">
-          <div id="approvalDashboardFilters" class="approval-dashboard-filters"></div>
-          <button id="approvalSummaryBtn" class="btn-sub approval-summary-btn">요약 생성</button>
-        </div>
         <div id="approvalKpiGrid" class="approval-kpi-grid"></div>
         <div id="approvalTrendPanel" class="approval-trend-panel"></div>
         <div id="approvalChartGrid" class="approval-chart-grid"></div>
@@ -312,6 +312,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=17"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbx5NOreMynVpCV12JiqlRNzD7-9_fHd51ILW562jTpgRGH5qPn7sIptHgDzmUyhd08edQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -57,6 +57,7 @@ const state = {
   approvalBaseRows: [],
   approvalRows: [],
   approvalTrendRows: [],
+  approvalDataLoaded: false,
   approvalPage: 1,
   approvalSevereRows: [],
   severePage: 1,
@@ -1055,19 +1056,36 @@ function switchView(view) {
     if (!state.approvalFilters.year && state.initFilterData) {
       state.approvalFilters.year = state.initFilterData.defaultYear || state.currentYear;
     }
-    loadApprovalDashboardData({ loadingMessage: '산재 승인 사고 대시보드를 불러오는 중입니다' });
+    if (state.approvalDataLoaded) loadApprovalDashboardData({ skipQuery: true });
+    else loadApprovalDashboardData({ loadingMessage: '산재 승인 사고 대시보드를 불러오는 중입니다' });
   }
   if (view === 'approvalData') {
     if (!state.approvalFilters.year && state.initFilterData) {
       state.approvalFilters.year = state.initFilterData.defaultYear || state.currentYear;
     }
-    loadApprovalData({ loadingMessage: '산재 승인 사고 데이터를 불러오는 중입니다' });
+    if (state.approvalDataLoaded) {
+      state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
+      state.approvalPage = 1;
+      renderApprovalFilters();
+      renderApprovalTablePage();
+    } else {
+      loadApprovalData({ loadingMessage: '산재 승인 사고 데이터를 불러오는 중입니다' });
+    }
   }
   if (view === 'approvalSevere') {
     if (!state.approvalFilters.year && state.initFilterData) {
       state.approvalFilters.year = state.initFilterData.defaultYear || state.currentYear;
     }
-    loadSevereStoreData({ loadingMessage: '중상해 매장 데이터를 불러오는 중입니다' });
+    if (state.approvalDataLoaded) {
+      state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
+      state.approvalSevereRows = getSevereStoreGroups(state.approvalRows);
+      state.severePage = 1;
+      renderSevereFilters();
+      renderSevereKpis();
+      renderSevereStorePage();
+    } else {
+      loadSevereStoreData({ loadingMessage: '중상해 매장 데이터를 불러오는 중입니다' });
+    }
   }
 }
 
@@ -1810,23 +1828,33 @@ function renderApprovalDashboardFilters() {
   const container = $('approvalDashboardFilters');
   if (!container || !state.initFilterData) return;
   const f = state.approvalFilters;
-  const numericYears = (state.initFilterData.years || []).filter(y => y !== '전체');
+  const years = state.initFilterData.years && state.initFilterData.years.length
+    ? state.initFilterData.years
+    : ['전체', '2026'];
 
   container.innerHTML = `
-    <div class="approval-filter-row compact approval-simple-filter-row">
-      <label>연도<select id="approvalDashYear">
-        ${numericYears.map(y => `<option value="${esc(y)}" ${String(y) === String(f.year) ? 'selected' : ''}>${esc(y)}</option>`).join('')}
-      </select></label>
-      <label>월<select id="approvalDashMonth">
-        ${getApprovalMonthOptions().map(m => `<option value="${esc(m)}" ${String(m) === String(f.month) ? 'selected' : ''}>${esc(m)}</option>`).join('')}
-      </select></label>
-      <button type="button" id="approvalDashReloadBtn" class="btn-sub">조회</button>
-    </div>`;
+    <label>기준연도<select id="approvalDashYear">
+      ${years.map(y => `<option value="${esc(y)}" ${String(y) === String(f.year) ? 'selected' : ''}>${esc(y)}</option>`).join('')}
+    </select></label>
+    <label>기준월<select id="approvalDashMonth">
+      ${getApprovalMonthOptions().map(m => `<option value="${esc(m)}" ${String(m) === String(f.month) ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+    </select></label>`;
 
   const reload = () => loadApprovalDashboardData();
-  $('approvalDashYear').addEventListener('change', e => { f.year = e.target.value; f.dept = '전체'; f.team = '전체'; f.storeSearch = ''; reload(); });
-  $('approvalDashMonth').addEventListener('change', e => { f.month = e.target.value; f.dept = '전체'; f.team = '전체'; f.storeSearch = ''; reload(); });
-  $('approvalDashReloadBtn').addEventListener('click', reload);
+  $('approvalDashYear').addEventListener('change', e => {
+    f.year = e.target.value;
+    f.dept = '전체';
+    f.team = '전체';
+    f.storeSearch = '';
+    loadApprovalDashboardData();
+  });
+  $('approvalDashMonth').addEventListener('change', e => {
+    f.month = e.target.value;
+    f.dept = '전체';
+    f.team = '전체';
+    f.storeSearch = '';
+    loadApprovalDashboardData();
+  });
 }
 
 async function loadApprovalDashboardData(options = {}) {
@@ -1844,6 +1872,7 @@ async function loadApprovalDashboardData(options = {}) {
       ]);
       state.approvalBaseRows = currentRes.rows || [];
       state.approvalTrendRows = trendRes.rows || [];
+      state.approvalDataLoaded = true;
     }
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     renderApprovalDashboardFilters();
@@ -1939,8 +1968,7 @@ function renderApprovalCharts() {
   const stats = getApprovalStats(state.approvalRows || []);
   grid.innerHTML = `
     ${makeApprovalDonutPanel('재해유형 TOP 5', stats.typeCounts)}
-    ${makeApprovalRankPanel('영업부별 산재승인 TOP 5', stats.deptCounts, 'dept')}
-    ${makeApprovalChipPanel('팀별 산재승인 TOP 5', stats.teamCounts)}
+    ${makeApprovalDeptTeamPanel(stats.deptCounts, stats.teamCounts)}
     ${makeApprovalBarPanel('영업부별 근로손실일수', stats.lossByDept, 'red', '일')}
     ${makeSevereStorePanel(stats.severeStores.slice(0, 5))}
   `;
@@ -1993,6 +2021,27 @@ function makeApprovalChipPanel(title, rows) {
       <b>${Number(r.count || 0).toLocaleString()}건</b>
     </div>`).join('') : '<div class="empty-message compact">데이터가 없습니다.</div>';
   return `<section class="approval-chart-card approval-chip-card"><h3>${esc(title)}</h3><div class="approval-chip-grid">${body}</div></section>`;
+}
+
+
+function makeApprovalDeptTeamPanel(deptRows, teamRows) {
+  const makeCol = (title, rows) => {
+    const body = (rows && rows.length) ? rows.slice(0, 5).map((r, i) => `
+      <div class="approval-combo-row">
+        <span>${i + 1}</span>
+        <strong>${esc(r.label || '-')}</strong>
+        <b>${Number(r.count || 0).toLocaleString()}건</b>
+      </div>`).join('') : '<div class="empty-message compact">데이터가 없습니다.</div>';
+    return `<div class="approval-combo-col"><h4>${esc(title)}</h4>${body}</div>`;
+  };
+
+  return `<section class="approval-chart-card approval-combo-card">
+    <h3>영업부·팀별 산재승인 TOP 5</h3>
+    <div class="approval-combo-grid">
+      ${makeCol('영업부별', deptRows)}
+      ${makeCol('팀별', teamRows)}
+    </div>
+  </section>`;
 }
 
 function makeApprovalBarPanel(title, rows, tone = 'blue', unit = '건') {
@@ -2072,6 +2121,7 @@ async function loadApprovalData(options = {}) {
     const queryFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
     const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
     state.approvalBaseRows = res.rows || [];
+    state.approvalDataLoaded = true;
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalPage = 1;
     renderApprovalFilters();
@@ -2198,6 +2248,7 @@ async function loadSevereStoreData(options = {}) {
     const queryFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
     const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
     state.approvalBaseRows = res.rows || [];
+    state.approvalDataLoaded = true;
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalSevereRows = getSevereStoreGroups(state.approvalRows);
     state.severePage = 1;

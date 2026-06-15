@@ -4069,3 +4069,121 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
     grid-column: 1;
   }
 }
+
+
+/* ============ v18 산재 승인 대시보드 상단/그래프/로딩 보정 ============ */
+.approval-dashboard-hero {
+  align-items: center;
+}
+.approval-dashboard-hero .hero-copy {
+  min-width: 360px;
+}
+.approval-hero-filters {
+  margin-left: auto;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.approval-hero-filters .approval-dashboard-filters {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.approval-hero-filters .approval-dashboard-filters label {
+  min-width: 128px;
+}
+.approval-hero-filters .approval-summary-btn {
+  height: 42px;
+  min-width: 100px;
+}
+.approval-chart-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+}
+.approval-donut-card,
+.approval-combo-card,
+.approval-chart-card {
+  min-height: 285px;
+}
+.approval-combo-card {
+  grid-column: span 1;
+}
+.approval-combo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.approval-combo-col {
+  background: #f7f9fc;
+  border-radius: 18px;
+  padding: 14px;
+  min-width: 0;
+}
+.approval-combo-col h4 {
+  margin: 0 0 12px;
+  color: var(--red);
+  font-size: 15px;
+  font-weight: 1000;
+}
+.approval-combo-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #e7ebf2;
+}
+.approval-combo-row:last-child {
+  border-bottom: 0;
+}
+.approval-combo-row span {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 1000;
+}
+.approval-combo-row strong {
+  color: #222;
+  font-size: 13px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-combo-row b {
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 1000;
+}
+.approval-year-comparison {
+  gap: 10px;
+}
+.approval-year-card {
+  height: 210px;
+}
+.approval-year-bar {
+  height: 112px;
+}
+@media (max-width: 980px) {
+  .approval-dashboard-hero {
+    display: block;
+  }
+  .approval-hero-filters {
+    margin-top: 16px;
+  }
+  .approval-hero-filters .approval-dashboard-filters {
+    flex-wrap: wrap;
+  }
+  .approval-combo-grid {
+    grid-template-columns: 1fr;
+  }
+}
