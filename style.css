@@ -4499,3 +4499,17 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
 @keyframes loadingShine {
   to { transform: translateX(100%); }
 }
+
+
+/* ============ v22 원본DB 링크/산재 요약 이미지 보정 ============ */
+.external-sheet-link {
+  text-decoration: none;
+  color: inherit;
+  margin-top: 8px;
+}
+.external-sheet-link::after {
+  content: '↗';
+  margin-left: auto;
+  font-size: 12px;
+  opacity: .8;
+}

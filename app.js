@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbyBNYw7suX9MB50MoT8UauWRkNJAXW4RlmAO_7eFtchfjxre1R0iBb6b3Ay_GTeKZ_EoA/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -2763,58 +2763,128 @@ async function buildApprovalSummarySvgForSafety(selectedYear, selectedMonth, log
   });
 }
 
-function buildApprovalSummaryStats(rows) {
-  const visibleRows = getApprovalVisibleBaseRows(rows || []);
-  const kpiRows = visibleRows.filter(r => isKpiTargetCategory(r.kpiCategory));
+function buildApprovalSummaryStats(rows, selectedYear) {
+  const visibleAll = getApprovalVisibleBaseRows(rows || []);
+  const visibleRows = visibleAll.filter(r => String(r.year) === String(selectedYear));
+  const threeTypeRows = visibleRows.filter(r => isKpiTargetCategory(r.kpiCategory));
   const severeRows = visibleRows.filter(isSevereRow);
   const lostDays = sumLostDays(visibleRows);
   const severeStores = getSevereStoreGroups(visibleRows);
-  const typeCounts = makeCountRows_(kpiRows, 'kpiCategory');
-  const lossByDept = makeSumRows_(visibleRows, 'stdDept', 'lostDays').map(r => ({ ...r, label: cleanDeptName(r.label) })).slice(0, 5);
-  return { visibleRows, kpiRows, severeRows, lostDays, severeStores, typeCounts, lossByDept };
+  const typeCounts = makeCountRows_(visibleRows, 'accidentType').filter(r => r.label !== '미분류').slice(0, 5);
+  const lossByDept = makeSumRows_(visibleRows, 'stdDept', 'lostDays')
+    .map(r => ({ ...r, label: cleanDeptName(r.label) }))
+    .slice(0, 5);
+  return { visibleAll, visibleRows, threeTypeRows, severeRows, lostDays, severeStores, typeCounts, lossByDept };
 }
 
 function buildApprovalSummarySvgReport(ctx) {
-  const stats = buildApprovalSummaryStats(ctx.rows || []);
+  const stats = buildApprovalSummaryStats(ctx.rows || [], ctx.year);
   const monthNum = Number(String(ctx.monthText).replace('월', '')) || 0;
   const monthLastDay = monthNum ? getLastDayOfMonth(ctx.year, monthNum) : '31';
-  const topKpi = stats.typeCounts[0] || { label: '-', count: 0 };
+  const topType = stats.typeCounts[0] || { label: '-', count: 0 };
   const yearCounts = buildApprovalYearCountsForSvg(ctx.rows || [], ctx.monthText);
   const maxYear = Math.max(1, ...yearCounts.map(r => r.count));
   const maxType = Math.max(1, ...stats.typeCounts.map(r => r.count));
   const maxLoss = Math.max(1, ...stats.lossByDept.map(r => r.count));
 
-  const barBaseY = 478;
-  const barChartH = 145;
-  const barXs = [116, 245, 374];
   const yearBars = yearCounts.map((r, i) => {
-    const h = Math.max(6, Math.round((r.count / maxYear) * barChartH));
-    return { ...r, x: barXs[i], h, y: barBaseY - h };
+    const x = 128 + i * 145;
+    const h = Math.max(10, Math.round((r.count / maxYear) * 150));
+    const y = 510 - h;
+    return { ...r, x, h, y, color: i === 2 ? '#ff1a1a' : '#0b2f86' };
   });
-  const trendPath = yearBars.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x + 34} ${p.y - 12}`).join(' ');
-  const typeBars = stats.typeCounts.map((r, i) => {
-    const y = 338 + i * 54;
-    const width = Math.max(6, Math.round((r.count / maxType) * 270));
-    return `<text x="690" y="${y}" class="dark" font-size="18" font-weight="900">${svgEsc(r.label)}</text><rect x="865" y="${y-15}" width="270" height="16" rx="8" fill="#edf0f5"/><rect x="865" y="${y-15}" width="${width}" height="16" rx="8" fill="${i === 0 ? '#0b2f86' : (i === 1 ? '#ff1a1a' : '#777')}"/><text x="1170" y="${y}" text-anchor="end" class="dark" font-size="18" font-weight="900">${r.count}건</text>`;
+
+  const typeRowsSvg = (stats.typeCounts.length ? stats.typeCounts : [{ label: '데이터 없음', count: 0 }]).slice(0, 5).map((r, i) => {
+    const y = 342 + i * 31;
+    const width = Math.max(6, Math.round((Number(r.count || 0) / maxType) * 230));
+    const color = i === 0 ? '#0b2f86' : (i === 1 ? '#ff1a1a' : (i === 2 ? '#f28c28' : '#8a8f98'));
+    return `
+      <text x="690" y="${y}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 10))}</text>
+      <rect x="810" y="${y-12}" width="230" height="12" rx="6" fill="#edf0f5"/>
+      <rect x="810" y="${y-12}" width="${width}" height="12" rx="6" fill="${color}"/>
+      <text x="1070" y="${y}" text-anchor="end" class="dark" font-size="15" font-weight="900">${Number(r.count||0).toLocaleString()}건</text>`;
   }).join('');
-  const lossBars = stats.lossByDept.map((r, i) => {
-    const y = 500 + i * 28;
-    const width = Math.max(6, Math.round((r.count / maxLoss) * 270));
-    return `<text x="690" y="${y}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 12))}</text><rect x="865" y="${y-12}" width="270" height="12" rx="6" fill="#edf0f5"/><rect x="865" y="${y-12}" width="${width}" height="12" rx="6" fill="#ff1a1a"/><text x="1170" y="${y}" text-anchor="end" class="dark" font-size="15" font-weight="900">${Number(r.count||0).toLocaleString()}일</text>`;
+
+  const lossRowsSvg = (stats.lossByDept.length ? stats.lossByDept : [{ label: '데이터 없음', count: 0 }]).slice(0, 5).map((r, i) => {
+    const y = 472 + i * 28;
+    const width = Math.max(6, Math.round((Number(r.count || 0) / maxLoss) * 230));
+    return `
+      <text x="690" y="${y}" class="dark" font-size="14" font-weight="900">${svgEsc(shortSvgText(r.label, 10))}</text>
+      <rect x="810" y="${y-11}" width="230" height="11" rx="6" fill="#edf0f5"/>
+      <rect x="810" y="${y-11}" width="${width}" height="11" rx="6" fill="#ff1a1a"/>
+      <text x="1070" y="${y}" text-anchor="end" class="dark" font-size="14" font-weight="900">${Number(r.count||0).toLocaleString()}일</text>`;
+  }).join('');
+
+  const severeTop = stats.severeStores.slice(0, 3).map((r, i) => {
+    const y = 472 + i * 28;
+    return `
+      <text x="1096" y="${y}" class="dark" font-size="13" font-weight="900">${i+1}. ${svgEsc(shortSvgText(r.store, 8))}</text>
+      <text x="1220" y="${y}" text-anchor="end" class="red" font-size="13" font-weight="900">${Number(r.maxLostDays||0).toLocaleString()}일</text>`;
   }).join('');
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
-  <defs><style>.font{font-family:'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif}.navy{fill:#0b2f86}.red{fill:#ff1a1a}.dark{fill:#222}.muted{fill:#555}.title{font-size:46px;font-weight:900;letter-spacing:-2px}.sub{font-size:18px;font-weight:800}.panel-title{font-size:20px;font-weight:900}.shadow{filter:drop-shadow(0px 4px 8px rgba(0,0,0,.12))}</style><linearGradient id="approvalSvgBarGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff2b2b"/><stop offset="100%" stop-color="#d90000"/></linearGradient></defs>
+  <defs>
+    <style>
+      .font{font-family:'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif}
+      .navy{fill:#0b2f86}.red{fill:#ff1a1a}.orange{fill:#f28c28}.dark{fill:#222}.muted{fill:#555}
+      .title{font-size:50px;font-weight:900;letter-spacing:-2px}
+      .sub{font-size:19px;font-weight:900}
+      .panel-title{font-size:20px;font-weight:900}
+      .shadow{filter:drop-shadow(0px 4px 8px rgba(0,0,0,.12))}
+    </style>
+  </defs>
   <rect width="1280" height="720" fill="#fff"/>
   <g class="font">
-    ${ctx.logoDataUrl ? `<image href="${ctx.logoDataUrl}" x="1030" y="38" width="174" height="70" preserveAspectRatio="xMidYMid meet"/>` : ''}
-    <text x="640" y="70" text-anchor="middle" class="title navy">${svgEsc(ctx.year)}년 ${svgEsc(ctx.monthText)} 산재승인 및 KPI <tspan class="red">집계 현황</tspan></text>
-    <text x="640" y="104" text-anchor="middle" class="sub dark">안전보건팀 / 기준: ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.01 ~ ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.${monthLastDay}</text>
-    <g class="shadow"><rect x="64" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="92" y="169" class="dark" font-size="20" font-weight="900">산업재해 승인 건수</text><text x="92" y="216" class="navy" font-size="42" font-weight="900">${stats.visibleRows.length}건</text><rect x="364" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="392" y="169" class="dark" font-size="20" font-weight="900">KPI 집계대상</text><text x="392" y="216" class="red" font-size="42" font-weight="900">${stats.kpiRows.length}건</text><rect x="664" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="692" y="169" class="dark" font-size="20" font-weight="900">총 근로손실일수</text><text x="692" y="216" class="red" font-size="42" font-weight="900">${stats.lostDays.toLocaleString()}일</text><rect x="964" y="135" width="250" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="992" y="169" class="dark" font-size="20" font-weight="900">91일 이상 중상해</text><text x="992" y="216" fill="#777" font-size="42" font-weight="900">${stats.severeRows.length}건</text></g>
-    <g><rect x="54" y="276" width="570" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="82" y="318" class="panel-title navy">3개년 산업재해 승인 건수 비교</text><path d="${trendPath}" fill="none" stroke="#ff1a1a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 8" opacity=".85"/>${yearBars.map(p=>`<circle cx="${p.x+34}" cy="${p.y-12}" r="7" fill="#ff1a1a"/>`).join('')}${yearBars.map((p,i)=>`<rect x="${p.x}" y="${p.y}" width="68" height="${p.h}" rx="14" fill="${i===2?'url(#approvalSvgBarGrad)':'#0b2f86'}" opacity="${i===2?'1':'.88'}"/><text x="${p.x+34}" y="${Math.max(338,p.y-31)}" text-anchor="middle" class="dark" font-size="22" font-weight="900">${p.count}건</text><text x="${p.x+34}" y="535" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.year}</text>`).join('')}</g>
-    <g><rect x="654" y="276" width="570" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="690" y="318" class="panel-title navy">KPI 분류별 건수</text>${typeBars}<line x1="690" y1="455" x2="1178" y2="455" stroke="#e5e7eb"/><text x="690" y="482" class="panel-title navy">영업부별 근로손실일수</text>${lossBars}</g>
-    <g><rect x="54" y="616" width="1166" height="72" rx="18" fill="#fff7f7" stroke="#ffc7c7"/><text x="84" y="657" class="red" font-size="22" font-weight="900">핵심 포인트</text><text x="226" y="657" class="dark" font-size="17" font-weight="900">산업재해 승인 건수 기준 KPI 반영 대상은 <tspan class="red">${stats.kpiRows.length}건</tspan>이며, 최다 KPI 분류는 <tspan class="red">${svgEsc(topKpi.label)}</tspan>입니다. 91일 이상 중상해 ${stats.severeRows.length}건을 모니터링합니다.</text></g>
+    ${ctx.logoDataUrl ? `<image href="${ctx.logoDataUrl}" x="1034" y="38" width="174" height="70" preserveAspectRatio="xMidYMid meet"/>` : ''}
+    <text x="640" y="74" text-anchor="middle" class="title navy">${svgEsc(ctx.year)}년 ${svgEsc(ctx.monthText)} 산업재해 <tspan class="red">현황</tspan></text>
+    <text x="640" y="108" text-anchor="middle" class="sub dark">기준 : ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.01 ~ ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.${monthLastDay}</text>
+
+    <g class="shadow">
+      <rect x="64" y="138" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="92" y="172" class="dark" font-size="20" font-weight="900">산업재해 승인 건수</text>
+      <text x="92" y="219" class="navy" font-size="42" font-weight="900">${stats.visibleRows.length}건</text>
+
+      <rect x="364" y="138" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="392" y="172" class="dark" font-size="20" font-weight="900">3대유형</text>
+      <text x="392" y="219" class="orange" font-size="42" font-weight="900">${stats.threeTypeRows.length}건</text>
+      <text x="392" y="235" fill="#666" font-size="11" font-weight="800">넘어짐·무리한 동작·물체에 맞음</text>
+
+      <rect x="664" y="138" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="692" y="172" class="dark" font-size="20" font-weight="900">총 근로손실일수</text>
+      <text x="692" y="219" class="red" font-size="42" font-weight="900">${stats.lostDays.toLocaleString()}일</text>
+
+      <rect x="964" y="138" width="250" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="992" y="172" class="dark" font-size="20" font-weight="900">91일 이상 재해</text>
+      <text x="992" y="219" fill="#777" font-size="42" font-weight="900">${stats.severeRows.length}건</text>
+    </g>
+
+    <g>
+      <rect x="54" y="276" width="570" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="82" y="318" class="panel-title navy">3개년 산업재해 승인 건수 비교</text>
+      <line x1="92" y1="510" x2="565" y2="510" stroke="#e5e7eb" stroke-width="2"/>
+      ${yearBars.map(p => `
+        <text x="${p.x + 42}" y="${p.y - 14}" text-anchor="middle" class="dark" font-size="22" font-weight="900">${p.count}건</text>
+        <rect x="${p.x}" y="${p.y}" width="84" height="${p.h}" rx="14" fill="${p.color}" opacity="${p.year === String(ctx.year) ? '1' : '.88'}"/>
+        <text x="${p.x + 42}" y="545" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.year}</text>
+      `).join('')}
+    </g>
+
+    <g>
+      <rect x="654" y="276" width="570" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="690" y="318" class="panel-title navy">재해유형별 건수</text>
+      ${typeRowsSvg}
+      <line x1="690" y1="420" x2="1190" y2="420" stroke="#e5e7eb"/>
+      <text x="690" y="448" class="panel-title navy">영업부별 근로손실일수</text>
+      ${lossRowsSvg}
+      ${severeTop ? `<text x="1096" y="448" class="panel-title red" font-size="17" font-weight="900">91일 이상 TOP</text>${severeTop}` : ''}
+    </g>
+
+    <g>
+      <rect x="54" y="616" width="1166" height="72" rx="18" fill="#fff7f7" stroke="#ffc7c7"/>
+      <text x="84" y="657" class="red" font-size="22" font-weight="900">핵심 포인트</text>
+      <text x="226" y="657" class="dark" font-size="17" font-weight="900">산업재해 승인 건수는 <tspan class="red">${stats.visibleRows.length}건</tspan>이며, 3대유형은 <tspan class="orange">${stats.threeTypeRows.length}건</tspan>입니다. 최다 재해유형은 <tspan class="red">${svgEsc(topType.label)}</tspan>이고, 91일 이상 재해는 <tspan class="red">${stats.severeRows.length}건</tspan>입니다.</text>
+    </g>
   </g>
 </svg>`;
 }
