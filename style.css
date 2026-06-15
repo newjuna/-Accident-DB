@@ -4526,3 +4526,10 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
   font-size: 12px;
   opacity: .8;
 }
+
+
+/* ============ v24 원본DB 분리/산재 요약 그래프 보정 ============ */
+.original-db-link {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.14);
+}
