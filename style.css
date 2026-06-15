@@ -3676,3 +3676,140 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ============ v15 산재 승인 사고 메뉴/대시보드/중상해 보정 ============ */
+.nav-group-title {
+  margin: 12px 10px 6px;
+  color: rgba(255,255,255,.62);
+  font-size: 12px;
+  font-weight: 1000;
+  letter-spacing: -0.2px;
+}
+.approval-menu-group {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255,255,255,.14);
+}
+.approval-group-title { color: rgba(255,255,255,.82); }
+.approval-dashboard-filters {
+  background: rgba(255,255,255,.96);
+  border: 1px solid rgba(0,43,109,.12);
+  border-radius: 22px;
+  box-shadow: var(--shadow-soft);
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.approval-filter-row.compact { margin-top: 0; }
+.approval-kpi-severe::before { background: rgba(255, 26, 26, .10); }
+.approval-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+.approval-chart-card {
+  background: rgba(255,255,255,.96);
+  border: 1px solid rgba(0,43,109,.12);
+  border-radius: 22px;
+  box-shadow: var(--shadow-soft);
+  padding: 20px 22px;
+  min-height: 245px;
+}
+.approval-chart-card h3 {
+  margin: 0 0 16px;
+  color: var(--navy);
+  font-size: 19px;
+  font-weight: 1000;
+  letter-spacing: -0.5px;
+}
+.approval-mini-row {
+  display: grid;
+  grid-template-columns: 32px 116px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 10px;
+  margin: 11px 0;
+}
+.approval-mini-row .rank,
+.severe-store-row .rank {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #9aa0a6;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 1000;
+}
+.approval-mini-row .rank.first,
+.severe-store-row .rank.first { background: var(--red); }
+.approval-mini-row strong {
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 1000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-track {
+  height: 11px;
+  border-radius: 999px;
+  background: #edf0f5;
+  overflow: hidden;
+}
+.mini-fill { height: 100%; border-radius: inherit; }
+.mini-fill.blue { background: var(--navy); }
+.mini-fill.red { background: var(--red); }
+.approval-mini-row b {
+  text-align: right;
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 1000;
+}
+.severe-card-wide { grid-column: 1 / -1; min-height: 0; }
+.severe-store-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0,1fr) 150px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf0f5;
+}
+.severe-store-row:last-child { border-bottom: 0; }
+.severe-store-row strong {
+  display: block;
+  color: var(--text-main);
+  font-size: 15px;
+  font-weight: 1000;
+}
+.severe-store-row small {
+  display: block;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.severe-store-row b {
+  text-align: right;
+  color: var(--navy);
+  font-size: 15px;
+  font-weight: 1000;
+}
+.severe-store-row.risk {
+  background: #fff7f7;
+  margin: 0 -10px;
+  padding-left: 10px;
+  padding-right: 10px;
+  border-radius: 12px;
+}
+.severe-titlebar { border-left-color: var(--red); }
+.severe-risk-row { background: #fff7f7; }
+.severe-table th, .severe-table td { white-space: nowrap; }
+.approval-trend-card.improved .approval-trend-svg { height: 270px; }
+.empty-message.compact { padding: 24px 0; font-size: 14px; }
+@media (max-width: 980px) {
+  .approval-chart-grid { grid-template-columns: 1fr; }
+  .approval-mini-row { grid-template-columns: 32px 100px minmax(0,1fr) 58px; }
+}

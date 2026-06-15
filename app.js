@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbyac5P7pGGBk8qTwvhhr64BvJQfKFeZQe5naEgLAeVpb2zlRM9dY7rsHOQNneEWkzSGvQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -58,6 +58,8 @@ const state = {
   approvalRows: [],
   approvalTrendRows: [],
   approvalPage: 1,
+  approvalSevereRows: [],
+  severePage: 1,
   approvalFilters: {
     year: '',
     month: '전체',
@@ -168,9 +170,8 @@ function isSafetyTeamLogin() {
 }
 
 function toggleSafetyOnlyFeatures() {
-  const approvalNav = $('approvalNav');
-  if (!approvalNav) return;
-  approvalNav.classList.toggle('hidden', !isSafetyTeamLogin());
+  const group = $('approvalMenuGroup');
+  if (group) group.classList.toggle('hidden', !isSafetyTeamLogin());
 }
 
 /* ============ 이벤트 바인딩 ============ */
@@ -210,6 +211,15 @@ window.addEventListener('load', () => {
   if ($('approvalNext')) $('approvalNext').addEventListener('click', () => {
     const max = Math.max(1, Math.ceil(state.approvalRows.length / PAGE_SIZE_APPROVAL));
     if (state.approvalPage < max) { state.approvalPage++; renderApprovalTablePage(); }
+  });
+
+  // 중상해 매장 페이지네이션
+  if ($('severePrev')) $('severePrev').addEventListener('click', () => {
+    if (state.severePage > 1) { state.severePage--; renderSevereStorePage(); }
+  });
+  if ($('severeNext')) $('severeNext').addEventListener('click', () => {
+    const max = Math.max(1, Math.ceil(state.approvalSevereRows.length / PAGE_SIZE_APPROVAL));
+    if (state.severePage < max) { state.severePage++; renderSevereStorePage(); }
   });
 
   // 리스트 모달 페이지네이션
@@ -993,8 +1003,9 @@ function toggleRegionFilter(dept) {
 
 /* ============ 페이지 전환 (로딩창 노출 최적화) ============ */
 function switchView(view) {
-  if (view === 'approval' && !isSafetyTeamLogin()) {
-    alert('산재승인 조회는 안전보건팀 로그인에서만 사용할 수 있습니다.');
+  const approvalViews = ['approval', 'approvalData', 'approvalSevere'];
+  if (approvalViews.includes(view) && !isSafetyTeamLogin()) {
+    alert('산재 승인 사고 메뉴는 안전보건팀 로그인에서만 사용할 수 있습니다.');
     view = 'dashboard';
   }
 
@@ -1006,6 +1017,8 @@ function switchView(view) {
   $('dataPage').classList.toggle('hidden', view !== 'data');
   $('repeatPage').classList.toggle('hidden', view !== 'repeat');
   if ($('approvalPage')) $('approvalPage').classList.toggle('hidden', view !== 'approval');
+  if ($('approvalDataPage')) $('approvalDataPage').classList.toggle('hidden', view !== 'approvalData');
+  if ($('approvalSeverePage')) $('approvalSeverePage').classList.toggle('hidden', view !== 'approvalSevere');
   
   if (view === 'data') {
     renderDataFilters();
@@ -1021,7 +1034,19 @@ function switchView(view) {
     if (!state.approvalFilters.year && state.initFilterData) {
       state.approvalFilters.year = state.initFilterData.defaultYear || state.currentYear;
     }
-    loadApprovalData({ loadingMessage: '산재승인 데이터를 불러오는 중입니다' });
+    loadApprovalDashboardData({ loadingMessage: '산재 승인 사고 대시보드를 불러오는 중입니다' });
+  }
+  if (view === 'approvalData') {
+    if (!state.approvalFilters.year && state.initFilterData) {
+      state.approvalFilters.year = state.initFilterData.defaultYear || state.currentYear;
+    }
+    loadApprovalData({ loadingMessage: '산재 승인 사고 데이터를 불러오는 중입니다' });
+  }
+  if (view === 'approvalSevere') {
+    if (!state.approvalFilters.year && state.initFilterData) {
+      state.approvalFilters.year = state.initFilterData.defaultYear || state.currentYear;
+    }
+    loadSevereStoreData({ loadingMessage: '중상해 매장 데이터를 불러오는 중입니다' });
   }
 }
 
@@ -1640,7 +1665,7 @@ function renderDataTablePage() {
 }
 
 
-/* ============ 산재승인 조회 화면 ============ */
+/* ============ 산재 승인 사고 공통/대시보드/데이터조회/중상해매장 ============ */
 
 function getApprovalMonthOptions() {
   return ['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
@@ -1663,8 +1688,11 @@ function isApprovalCommuteRow(r) {
 }
 
 function isApprovalDashboardRow(r) {
-  // 산재승인DB에는 출퇴근재해가 있어도, 대시보드/요약/엑셀에서는 완전 제외
   return isApprovedRow(r) && !isApprovalCommuteRow(r);
+}
+
+function isSevereRow(r) {
+  return isApprovalDashboardRow(r) && Number(r.lostDays || 0) >= 91;
 }
 
 function sumLostDays(rows) {
@@ -1690,47 +1718,258 @@ function applyApprovalClientFilters(rows) {
 function getApprovalStats(rows) {
   const visibleRows = getApprovalVisibleBaseRows(rows || []);
   const kpiRows = visibleRows.filter(r => isKpiTargetCategory(r.kpiCategory));
-  const excludeRows = visibleRows.filter(r => !isKpiTargetCategory(r.kpiCategory));
+  const severeRows = visibleRows.filter(isSevereRow);
   const lostDays = sumLostDays(visibleRows);
+  const severeStores = getSevereStoreGroups(visibleRows);
 
-  const categoryCounts = {};
-  kpiRows.forEach(r => {
-    const key = String(r.kpiCategory || '').trim();
-    if (key) categoryCounts[key] = (categoryCounts[key] || 0) + 1;
+  const typeCounts = makeCountRows_(kpiRows, 'kpiCategory');
+  const deptCounts = makeCountRows_(visibleRows, 'stdDept').map(r => ({ ...r, label: cleanDeptName(r.label) }));
+  const teamCounts = makeCountRows_(visibleRows, 'stdTeam');
+  const lossByDept = makeSumRows_(visibleRows, 'stdDept', 'lostDays').map(r => ({ ...r, label: cleanDeptName(r.label) }));
+
+  return { visibleRows, kpiRows, severeRows, lostDays, severeStores, typeCounts, deptCounts, teamCounts, lossByDept };
+}
+
+function makeCountRows_(rows, field) {
+  const o = {};
+  (rows || []).forEach(r => {
+    const key = String(r[field] || '미분류').trim() || '미분류';
+    o[key] = (o[key] || 0) + 1;
   });
-  const kpiCounts = getKpiTargetCategories().map(label => ({ label, count: categoryCounts[label] || 0 }));
+  return Object.keys(o).map(label => ({ label, count: o[label] })).sort((a, b) => b.count - a.count);
+}
 
-  return { visibleRows, kpiRows, excludeRows, lostDays, kpiCounts };
+function makeSumRows_(rows, groupField, sumField) {
+  const o = {};
+  (rows || []).forEach(r => {
+    const key = String(r[groupField] || '미분류').trim() || '미분류';
+    o[key] = (o[key] || 0) + (Number(r[sumField] || 0) || 0);
+  });
+  return Object.keys(o).map(label => ({ label, count: o[label] })).sort((a, b) => b.count - a.count);
+}
+
+function getSevereStoreGroups(rows) {
+  const severe = (rows || []).filter(isSevereRow);
+  const groups = {};
+  severe.forEach(r => {
+    const store = r.store || '미분류';
+    if (!groups[store]) {
+      groups[store] = {
+        store,
+        dept: r.stdDept || '-',
+        team: r.stdTeam || '-',
+        count: 0,
+        totalLostDays: 0,
+        maxLostDays: 0,
+        types: {},
+        rows: []
+      };
+    }
+    const g = groups[store];
+    const lost = Number(r.lostDays || 0) || 0;
+    g.count += 1;
+    g.totalLostDays += lost;
+    g.maxLostDays = Math.max(g.maxLostDays, lost);
+    g.types[r.accidentType || '미분류'] = (g.types[r.accidentType || '미분류'] || 0) + 1;
+    g.rows.push(r);
+  });
+  return Object.values(groups).map(g => {
+    const topType = Object.keys(g.types).sort((a, b) => g.types[b] - g.types[a])[0] || '-';
+    return { ...g, topType };
+  }).sort((a, b) => b.count - a.count || b.totalLostDays - a.totalLostDays || b.maxLostDays - a.maxLostDays).slice(0, 50);
+}
+
+function renderApprovalDashboardFilters() {
+  const container = $('approvalDashboardFilters');
+  if (!container || !state.initFilterData) return;
+  const f = state.approvalFilters;
+  const numericYears = (state.initFilterData.years || []).filter(y => y !== '전체');
+  const baseRows = getApprovalVisibleBaseRows(state.approvalBaseRows || []);
+  const deptOptions = uniqueValues(baseRows, 'stdDept');
+  const teamSource = f.dept && f.dept !== '전체' ? baseRows.filter(r => r.stdDept === f.dept) : baseRows;
+  const teamOptions = uniqueValues(teamSource, 'stdTeam');
+
+  container.innerHTML = `
+    <div class="approval-filter-row compact">
+      <label>연도<select id="approvalDashYear">
+        ${numericYears.map(y => `<option value="${esc(y)}" ${String(y) === String(f.year) ? 'selected' : ''}>${esc(y)}</option>`).join('')}
+      </select></label>
+      <label>월<select id="approvalDashMonth">
+        ${getApprovalMonthOptions().map(m => `<option value="${esc(m)}" ${String(m) === String(f.month) ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+      </select></label>
+      <label>영업부<select id="approvalDashDept"><option value="전체">전체</option>
+        ${deptOptions.map(d => `<option value="${esc(d)}" ${String(d) === String(f.dept) ? 'selected' : ''}>${esc(cleanDeptName(d))}</option>`).join('')}
+      </select></label>
+      <label>팀<select id="approvalDashTeam"><option value="전체">전체</option>
+        ${teamOptions.map(t => `<option value="${esc(t)}" ${String(t) === String(f.team) ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+      </select></label>
+      <label class="store-search-label">매장명 검색<input id="approvalDashStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력"></label>
+      <button type="button" id="approvalDashReloadBtn" class="btn-sub">조회</button>
+    </div>`;
+
+  const reload = () => loadApprovalDashboardData();
+  $('approvalDashYear').addEventListener('change', e => { f.year = e.target.value; f.dept = '전체'; f.team = '전체'; reload(); });
+  $('approvalDashMonth').addEventListener('change', e => { f.month = e.target.value; f.dept = '전체'; f.team = '전체'; reload(); });
+  $('approvalDashDept').addEventListener('change', e => { f.dept = e.target.value; f.team = '전체'; loadApprovalDashboardData({ skipQuery: true }); });
+  $('approvalDashTeam').addEventListener('change', e => { f.team = e.target.value; loadApprovalDashboardData({ skipQuery: true }); });
+  $('approvalDashStoreSearch').addEventListener('input', e => { f.storeSearch = e.target.value; });
+  $('approvalDashStoreSearch').addEventListener('keydown', e => { if (e.key === 'Enter') reload(); });
+  $('approvalDashReloadBtn').addEventListener('click', reload);
+}
+
+async function loadApprovalDashboardData(options = {}) {
+  if (!isSafetyTeamLogin()) return;
+  const f = state.approvalFilters;
+  if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
+  if (!options.skipQuery) showLoading(options.loadingMessage || '산재 승인 사고 대시보드를 조회 중입니다');
+  try {
+    if (!options.skipQuery) {
+      const currentFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+      const trendFilters = { year: '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+      const [currentRes, trendRes] = await Promise.all([
+        callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(currentFilters) }),
+        callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(trendFilters) })
+      ]);
+      state.approvalBaseRows = currentRes.rows || [];
+      state.approvalTrendRows = trendRes.rows || [];
+    }
+    state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
+    renderApprovalDashboardFilters();
+    renderApprovalKpis();
+    renderApprovalTrendChart();
+    renderApprovalCharts();
+  } catch (err) {
+    alert('산재 승인 사고 대시보드 오류: ' + (err.message || err));
+  } finally {
+    if (!options.skipQuery) hideLoading();
+  }
 }
 
 function renderApprovalKpis() {
   const grid = $('approvalKpiGrid');
   if (!grid) return;
-
   const stats = getApprovalStats(state.approvalRows || []);
+  const multiSevereStores = stats.severeStores.filter(s => s.count >= 2).length;
 
   grid.innerHTML = `
-    <article class="approval-kpi-card approval-kpi-target">
-      <span>KPI 집계대상</span>
-      <strong>${stats.kpiRows.length}건</strong>
-      <small>넘어짐·무리한 동작·물체에 맞음</small>
-    </article>
     <article class="approval-kpi-card approval-kpi-approved">
       <span>업무상 사고 승인</span>
       <strong>${stats.visibleRows.length}건</strong>
       <small>출퇴근재해 제외</small>
     </article>
-    <article class="approval-kpi-card approval-kpi-exclude">
-      <span>KPI 제외</span>
-      <strong>${stats.excludeRows.length}건</strong>
-      <small>KPI 3대 분류 외 승인 건</small>
+    <article class="approval-kpi-card approval-kpi-target">
+      <span>KPI 집계대상</span>
+      <strong>${stats.kpiRows.length}건</strong>
+      <small>넘어짐·무리한 동작·물체에 맞음</small>
     </article>
     <article class="approval-kpi-card approval-kpi-days">
       <span>총 근로손실일수</span>
       <strong>${stats.lostDays.toLocaleString()}일</strong>
       <small>업무상 사고 승인 기준</small>
     </article>
+    <article class="approval-kpi-card approval-kpi-severe">
+      <span>91일 이상 중상해</span>
+      <strong>${stats.severeRows.length}건</strong>
+      <small>2건 이상 매장 ${multiSevereStores}개</small>
+    </article>
   `;
+}
+
+function getApprovalTrendRowsForCurrentFilters() {
+  const f = state.approvalFilters;
+  let out = getApprovalVisibleBaseRows(state.approvalTrendRows || []);
+  if (f.dept && f.dept !== '전체') out = out.filter(r => r.stdDept === f.dept);
+  if (f.team && f.team !== '전체') out = out.filter(r => r.stdTeam === f.team);
+  return out;
+}
+
+function getApprovalThreeYearCounts() {
+  const years = ['2024', '2025', '2026'];
+  const rows = getApprovalTrendRowsForCurrentFilters();
+  return years.map(year => ({
+    year,
+    count: rows.filter(r => String(r.year) === String(year) && isKpiTargetCategory(r.kpiCategory)).length
+  }));
+}
+
+function renderApprovalTrendChart() {
+  const panel = $('approvalTrendPanel');
+  if (!panel) return;
+  const data = getApprovalThreeYearCounts();
+  const max = Math.max(1, ...data.map(d => d.count));
+  const baseY = 250;
+  const chartH = 165;
+  const barW = 64;
+  const xPositions = [125, 290, 455];
+  const points = data.map((d, i) => {
+    const h = Math.max(7, Math.round((d.count / max) * chartH));
+    return { ...d, x: xPositions[i] + barW / 2, y: baseY - h, h };
+  });
+  const trendPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y - 12}`).join(' ');
+
+  panel.innerHTML = `
+    <div class="approval-trend-card improved">
+      <div class="approval-trend-copy">
+        <span>3개년 KPI 반영 건수 비교</span>
+        <strong>2024 · 2025 · 2026</strong>
+        <small>${state.approvalFilters.month === '전체' ? '연간 누적 기준' : state.approvalFilters.month + ' 기준'} / 출퇴근재해 제외</small>
+      </div>
+      <svg class="approval-trend-svg" viewBox="0 0 620 290" role="img" aria-label="3개년 KPI 반영 건수 비교 그래프">
+        <defs>
+          <linearGradient id="approvalBarGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#ff2b2b"/>
+            <stop offset="100%" stop-color="#d90000"/>
+          </linearGradient>
+        </defs>
+        <path d="${trendPath}" fill="none" stroke="#ff1a1a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 8" opacity=".85"/>
+        ${points.map(p => `<circle cx="${p.x}" cy="${p.y - 12}" r="7" fill="#ff1a1a"/>`).join('')}
+        ${points.map((p, i) => `
+          <rect x="${xPositions[i]}" y="${baseY - p.h}" width="${barW}" height="${p.h}" rx="15" fill="${i === 2 ? 'url(#approvalBarGrad)' : '#0b2f86'}" opacity="${i === 2 ? '1' : '.9'}"/>
+          <text x="${p.x}" y="${Math.max(28, p.y - 34)}" text-anchor="middle" fill="#222" font-size="23" font-weight="900">${p.count}건</text>
+          <text x="${p.x}" y="282" text-anchor="middle" fill="#333" font-size="18" font-weight="900">${p.year}</text>
+        `).join('')}
+      </svg>
+    </div>`;
+}
+
+function renderApprovalCharts() {
+  const grid = $('approvalChartGrid');
+  if (!grid) return;
+  const stats = getApprovalStats(state.approvalRows || []);
+  grid.innerHTML = `
+    ${makeApprovalBarPanel('재해유형별 KPI 건수', stats.typeCounts, 'red')}
+    ${makeApprovalBarPanel('영업부별 산재승인 건수', stats.deptCounts.slice(0, 6), 'blue')}
+    ${makeApprovalBarPanel('팀별 산재승인 건수', stats.teamCounts.slice(0, 6), 'blue')}
+    ${makeApprovalBarPanel('영업부별 근로손실일수', stats.lossByDept.slice(0, 6), 'red', '일')}
+    ${makeSevereStorePanel(stats.severeStores.slice(0, 10))}
+  `;
+}
+
+function makeApprovalBarPanel(title, rows, tone = 'blue', unit = '건') {
+  const max = Math.max(1, ...(rows || []).map(r => Number(r.count || 0)));
+  const body = (rows && rows.length) ? rows.map((r, i) => {
+    const w = Math.max(6, Math.round((Number(r.count || 0) / max) * 100));
+    return `<div class="approval-mini-row">
+      <span class="rank ${i === 0 ? 'first' : ''}">${i + 1}</span>
+      <strong>${esc(r.label || '-')}</strong>
+      <div class="mini-track"><div class="mini-fill ${tone}" style="width:${w}%"></div></div>
+      <b>${Number(r.count || 0).toLocaleString()}${unit}</b>
+    </div>`;
+  }).join('') : '<div class="empty-message compact">데이터가 없습니다.</div>';
+  return `<section class="approval-chart-card"><h3>${esc(title)}</h3>${body}</section>`;
+}
+
+function makeSevereStorePanel(rows) {
+  const body = rows.length ? rows.map((r, i) => `
+    <div class="severe-store-row ${r.count >= 2 ? 'risk' : ''}">
+      <span class="rank ${i === 0 ? 'first' : ''}">${i + 1}</span>
+      <div>
+        <strong>${esc(r.store || '-')}</strong>
+        <small>${esc(cleanDeptName(r.dept || '-'))} · ${esc(r.team || '-')} · ${esc(r.topType || '-')}</small>
+      </div>
+      <b>${r.count}건 / ${Number(r.maxLostDays || 0).toLocaleString()}일</b>
+    </div>`).join('') : '<div class="empty-message compact">91일 이상 중상해 매장이 없습니다.</div>';
+  return `<section class="approval-chart-card severe-card-wide"><h3>91일 이상 중상해 매장 TOP 10</h3>${body}</section>`;
 }
 
 function renderApprovalFilters() {
@@ -1745,39 +1984,25 @@ function renderApprovalFilters() {
 
   container.innerHTML = `
     <div class="approval-filter-head">
-      <div>
-        <span>산재승인 조회 필터</span>
-      </div>
+      <div><span>산재 승인 사고 데이터 조회 필터</span></div>
       <button type="button" id="approvalReloadBtn" class="btn-sub">조회</button>
     </div>
     <div class="approval-filter-row">
-      <label>연도<select id="approvalYear">
-        ${numericYears.map(y => `<option value="${esc(y)}" ${String(y) === String(f.year) ? 'selected' : ''}>${esc(y)}</option>`).join('')}
-      </select></label>
-      <label>월<select id="approvalMonth">
-        ${getApprovalMonthOptions().map(m => `<option value="${esc(m)}" ${String(m) === String(f.month) ? 'selected' : ''}>${esc(m)}</option>`).join('')}
-      </select></label>
-      <label>영업부<select id="approvalDept"><option value="전체">전체</option>
-        ${deptOptions.map(d => `<option value="${esc(d)}" ${String(d) === String(f.dept) ? 'selected' : ''}>${esc(cleanDeptName(d))}</option>`).join('')}
-      </select></label>
-      <label>팀<select id="approvalTeam"><option value="전체">전체</option>
-        ${teamOptions.map(t => `<option value="${esc(t)}" ${String(t) === String(f.team) ? 'selected' : ''}>${esc(t)}</option>`).join('')}
-      </select></label>
+      <label>연도<select id="approvalYear">${numericYears.map(y => `<option value="${esc(y)}" ${String(y) === String(f.year) ? 'selected' : ''}>${esc(y)}</option>`).join('')}</select></label>
+      <label>월<select id="approvalMonth">${getApprovalMonthOptions().map(m => `<option value="${esc(m)}" ${String(m) === String(f.month) ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label>
+      <label>영업부<select id="approvalDept"><option value="전체">전체</option>${deptOptions.map(d => `<option value="${esc(d)}" ${String(d) === String(f.dept) ? 'selected' : ''}>${esc(cleanDeptName(d))}</option>`).join('')}</select></label>
+      <label>팀<select id="approvalTeam"><option value="전체">전체</option>${teamOptions.map(t => `<option value="${esc(t)}" ${String(t) === String(f.team) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>
       <label class="store-search-label">매장명 검색<input id="approvalStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력"></label>
       <button type="button" id="approvalResetBtn" class="btn-sub btn-light">초기화</button>
-    </div>
-  `;
+    </div>`;
 
   const reload = () => loadApprovalData();
   const rerender = () => {
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalPage = 1;
     renderApprovalFilters();
-    renderApprovalKpis();
-    renderApprovalTrendChart();
     renderApprovalTablePage();
   };
-
   $('approvalYear').addEventListener('change', e => { f.year = e.target.value; f.dept = '전체'; f.team = '전체'; reload(); });
   $('approvalMonth').addEventListener('change', e => { f.month = e.target.value; f.dept = '전체'; f.team = '전체'; reload(); });
   $('approvalDept').addEventListener('change', e => { f.dept = e.target.value; f.team = '전체'; rerender(); });
@@ -1792,133 +2017,41 @@ async function loadApprovalData(options = {}) {
   if (!isSafetyTeamLogin()) return;
   const f = state.approvalFilters;
   if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
-  showLoading(options.loadingMessage || '산재승인 데이터를 조회 중입니다');
+  showLoading(options.loadingMessage || '산재 승인 사고 데이터를 조회 중입니다');
   try {
-    const currentFilters = {
-      year: f.year,
-      month: f.month || '전체',
-      dept: '전체',
-      team: '전체',
-      store: '전체',
-      type: '전체',
-      storeSearch: f.storeSearch || ''
-    };
-    const trendFilters = {
-      year: '전체',
-      month: f.month || '전체',
-      dept: '전체',
-      team: '전체',
-      store: '전체',
-      type: '전체',
-      storeSearch: f.storeSearch || ''
-    };
-
-    const [currentRes, trendRes] = await Promise.all([
-      callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(currentFilters) }),
-      callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(trendFilters) })
-    ]);
-
-    state.approvalBaseRows = currentRes.rows || [];
-    state.approvalTrendRows = trendRes.rows || [];
+    const queryFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+    const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
+    state.approvalBaseRows = res.rows || [];
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalPage = 1;
     renderApprovalFilters();
-    renderApprovalKpis();
-    renderApprovalTrendChart();
     renderApprovalTablePage();
   } catch (err) {
-    alert('산재승인 조회 오류: ' + (err.message || err));
+    alert('산재 승인 사고 데이터 조회 오류: ' + (err.message || err));
   } finally {
     hideLoading();
   }
 }
 
 function resetApprovalFilters() {
-  state.approvalFilters = {
-    year: state.initFilterData ? state.initFilterData.defaultYear : state.currentYear,
-    month: '전체',
-    dept: '전체',
-    team: '전체',
-    storeSearch: ''
-  };
-  loadApprovalData({ loadingMessage: '산재승인 조회 조건을 초기화하는 중입니다' });
+  state.approvalFilters = { year: state.initFilterData ? state.initFilterData.defaultYear : state.currentYear, month: '전체', dept: '전체', team: '전체', storeSearch: '' };
+  if (state.currentView === 'approval') loadApprovalDashboardData({ loadingMessage: '산재 승인 사고 대시보드를 초기화하는 중입니다' });
+  else if (state.currentView === 'approvalSevere') loadSevereStoreData({ loadingMessage: '중상해 매장 조회 조건을 초기화하는 중입니다' });
+  else loadApprovalData({ loadingMessage: '산재 승인 사고 조회 조건을 초기화하는 중입니다' });
 }
 
 function makeApprovalBadge(value, type) {
   const v = String(value || '').trim();
-  if (type === 'approval') {
-    return v === 'Y' ? '<span class="approval-badge ok">승인</span>' : '<span class="approval-badge wait">미승인</span>';
-  }
+  if (type === 'approval') return v === 'Y' ? '<span class="approval-badge ok">승인</span>' : '<span class="approval-badge wait">미승인</span>';
   if (!v) return '<span class="approval-badge empty">공란</span>';
   if (isKpiTargetCategory(v)) return `<span class="approval-badge target">${esc(v)}</span>`;
   if (v.includes('미매칭')) return `<span class="approval-badge warn">${esc(v)}</span>`;
   return `<span class="approval-badge exclude">${esc(v)}</span>`;
 }
 
-function getApprovalTrendRowsForCurrentFilters() {
-  const f = state.approvalFilters;
-  let out = getApprovalVisibleBaseRows(state.approvalTrendRows || []);
-  if (f.dept && f.dept !== '전체') out = out.filter(r => r.stdDept === f.dept);
-  if (f.team && f.team !== '전체') out = out.filter(r => r.stdTeam === f.team);
-  return out;
-}
-
-function getApprovalThreeYearCounts() {
-  const years = ['2024', '2025', '2026'];
-  const rows = getApprovalTrendRowsForCurrentFilters();
-  return years.map(year => {
-    const kpiRows = rows.filter(r => String(r.year) === String(year) && isKpiTargetCategory(r.kpiCategory));
-    return { year, count: kpiRows.length };
-  });
-}
-
-function renderApprovalTrendChart() {
-  const panel = $('approvalTrendPanel');
-  if (!panel) return;
-
-  const data = getApprovalThreeYearCounts();
-  const max = Math.max(1, ...data.map(d => d.count));
-  const chartW = 520;
-  const chartH = 190;
-  const baseY = 238;
-  const barW = 62;
-  const xPositions = [120, 260, 400];
-
-  const points = data.map((d, i) => {
-    const h = Math.max(6, Math.round((d.count / max) * chartH));
-    return { ...d, x: xPositions[i] + barW / 2, y: baseY - h, h };
-  });
-  const trendPath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y - 16}`).join(' ');
-
-  panel.innerHTML = `
-    <div class="approval-trend-card">
-      <div class="approval-trend-copy">
-        <span>3개년 KPI 반영 건수 비교</span>
-        <strong>2024 · 2025 · 2026</strong>
-        <small>${state.approvalFilters.month === '전체' ? '연간 누적 기준' : state.approvalFilters.month + ' 기준'} / 출퇴근재해 제외</small>
-      </div>
-      <svg class="approval-trend-svg" viewBox="0 0 580 270" role="img" aria-label="3개년 KPI 반영 건수 비교 그래프">
-        <defs>
-          <linearGradient id="approvalBarGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#ff2b2b"/>
-            <stop offset="100%" stop-color="#d90000"/>
-          </linearGradient>
-        </defs>
-        ${points.map((p, i) => `
-          <text x="${p.x}" y="${p.y - 25}" text-anchor="middle" fill="#222" font-size="22" font-weight="900">${p.count}건</text>
-          <rect x="${xPositions[i]}" y="${baseY - p.h}" width="${barW}" height="${p.h}" rx="14" fill="${i === 2 ? 'url(#approvalBarGrad)' : '#0b2f86'}" opacity="${i === 2 ? '1' : '.88'}"/>
-          <text x="${p.x}" y="262" text-anchor="middle" fill="#333" font-size="18" font-weight="900">${p.year}</text>
-        `).join('')}
-        <path d="${trendPath}" fill="none" stroke="#ff1a1a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 8"/>
-        ${points.map(p => `<circle cx="${p.x}" cy="${p.y - 16}" r="7" fill="#ff1a1a"/>`).join('')}
-      </svg>
-    </div>
-  `;
-}
-
 function buildApprovalExcelFileName() {
   const f = state.approvalFilters || {};
-  const parts = ['산재승인_KPI조회'];
+  const parts = ['산재승인_업무상사고_KPI조회'];
   if (f.year) parts.push(String(f.year) + '년');
   if (f.month && f.month !== '전체') parts.push(String(f.month));
   if (f.dept && f.dept !== '전체') parts.push(cleanDeptName(f.dept));
@@ -1928,107 +2061,44 @@ function buildApprovalExcelFileName() {
 
 function downloadApprovalExcel() {
   const rows = state.approvalRows || [];
-  if (!rows.length) {
-    alert('다운로드할 산재승인 조회 결과가 없습니다.');
-    return;
-  }
-
-  if (typeof XLSX === 'undefined') {
-    alert('엑셀 다운로드 라이브러리를 불러오지 못했습니다. 인터넷 연결 후 다시 시도해 주세요.');
-    return;
-  }
-
+  if (!rows.length) return alert('다운로드할 산재 승인 사고 조회 결과가 없습니다.');
+  if (typeof XLSX === 'undefined') return alert('엑셀 다운로드 라이브러리를 불러오지 못했습니다. 인터넷 연결 후 다시 시도해 주세요.');
   const fileName = buildApprovalExcelFileName();
   const title = fileName.replace(/\.xlsx$/i, '');
-
   const header = ['No', '재해일자', '영업부', '팀', '매장명', '재해유형', '산재승인 유무', '근로손실일수', 'KPI집계현황분류', '사고내용'];
-  const dataRows = rows.map((r, i) => ([
-    i + 1,
-    r.accidentDate || '',
-    cleanDeptName(r.stdDept || ''),
-    r.stdTeam || '',
-    r.store || '',
-    r.accidentType || '',
-    r.approvalYn || '',
-    r.lostDays || '',
-    r.kpiCategory || '',
-    r.accidentContent || ''
-  ]));
+  const dataRows = rows.map((r, i) => ([i + 1, r.accidentDate || '', cleanDeptName(r.stdDept || ''), r.stdTeam || '', r.store || '', r.accidentType || '', r.approvalYn || '', r.lostDays || '', r.kpiCategory || '', r.accidentContent || '']));
+  makeStyledExcel_(title, header, dataRows, fileName, '산재승인KPI');
+}
+window.downloadApprovalExcel = downloadApprovalExcel;
 
-  const aoa = [
-    [title],
-    [],
-    [],
-    header,
-    ...dataRows
-  ];
-
+function makeStyledExcel_(title, header, dataRows, fileName, sheetBaseName) {
+  const aoa = [[title], [], [], header, ...dataRows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const lastRow = aoa.length;
   const lastCol = header.length;
   const tableStartRow = 4;
-
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol - 1 } }];
   ws['!cols'] = getAutoColumnWidths([header, ...dataRows]);
   ws['!rows'] = ws['!rows'] || [];
   ws['!rows'][0] = { hpt: 30 };
   ws['!rows'][3] = { hpt: 22 };
-
-  const borderStyle = {
-    top: { style: 'thin', color: { rgb: '808080' } },
-    bottom: { style: 'thin', color: { rgb: '808080' } },
-    left: { style: 'thin', color: { rgb: '808080' } },
-    right: { style: 'thin', color: { rgb: '808080' } }
-  };
-
-  const headerStyle = {
-    font: { name: '맑은 고딕', bold: true, sz: 11, color: { rgb: '000000' } },
-    fill: { patternType: 'solid', fgColor: { rgb: 'DCE6F1' } },
-    border: borderStyle,
-    alignment: { horizontal: 'center', vertical: 'center' }
-  };
-
-  const bodyStyle = {
-    font: { name: '맑은 고딕', sz: 10, color: { rgb: '000000' } },
-    border: borderStyle,
-    alignment: { vertical: 'top', wrapText: true }
-  };
-
-  const bodyCenterStyle = {
-    ...bodyStyle,
-    alignment: { horizontal: 'center', vertical: 'top', wrapText: true }
-  };
-
-  applyExcelCellStyle(ws, 'A1', {
-    font: { name: '맑은 고딕', bold: true, sz: 20, color: { rgb: '000000' } },
-    alignment: { horizontal: 'left', vertical: 'center' }
-  });
-
+  const borderStyle = { top: { style: 'thin', color: { rgb: '808080' } }, bottom: { style: 'thin', color: { rgb: '808080' } }, left: { style: 'thin', color: { rgb: '808080' } }, right: { style: 'thin', color: { rgb: '808080' } } };
+  const headerStyle = { font: { name: '맑은 고딕', bold: true, sz: 11, color: { rgb: '000000' } }, fill: { patternType: 'solid', fgColor: { rgb: 'DCE6F1' } }, border: borderStyle, alignment: { horizontal: 'center', vertical: 'center' } };
+  const bodyStyle = { font: { name: '맑은 고딕', sz: 10, color: { rgb: '000000' } }, border: borderStyle, alignment: { vertical: 'top', wrapText: true } };
+  const bodyCenterStyle = { ...bodyStyle, alignment: { horizontal: 'center', vertical: 'top', wrapText: true } };
+  applyExcelCellStyle(ws, 'A1', { font: { name: '맑은 고딕', bold: true, sz: 20, color: { rgb: '000000' } }, alignment: { horizontal: 'left', vertical: 'center' } });
   for (let r = tableStartRow; r <= lastRow; r++) {
     for (let c = 1; c <= lastCol; c++) {
       const addr = XLSX.utils.encode_cell({ r: r - 1, c: c - 1 });
-      if (r === tableStartRow) {
-        applyExcelCellStyle(ws, addr, headerStyle);
-      } else {
-        const style = [1, 2, 3, 4, 6, 7, 8, 9].includes(c) ? bodyCenterStyle : bodyStyle;
-        applyExcelCellStyle(ws, addr, style);
-      }
+      applyExcelCellStyle(ws, addr, r === tableStartRow ? headerStyle : ([1, 2, 3, 4, 6, 7, 8, 9].includes(c) ? bodyCenterStyle : bodyStyle));
     }
   }
-
   ws['!freeze'] = { xSplit: 0, ySplit: 4 };
-  ws['!autofilter'] = {
-    ref: XLSX.utils.encode_range({
-      s: { r: tableStartRow - 1, c: 0 },
-      e: { r: lastRow - 1, c: lastCol - 1 }
-    })
-  };
-
+  ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: tableStartRow - 1, c: 0 }, e: { r: lastRow - 1, c: lastCol - 1 } }) };
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, ('산재승인KPI_' + rows.length + '건').slice(0, 31));
+  XLSX.utils.book_append_sheet(wb, ws, (sheetBaseName + '_' + dataRows.length + '건').slice(0, 31));
   XLSX.writeFile(wb, fileName, { bookType: 'xlsx', cellStyles: true });
 }
-window.downloadApprovalExcel = downloadApprovalExcel;
 
 function renderApprovalTablePage() {
   const result = $('approvalResult');
@@ -2039,72 +2109,82 @@ function renderApprovalTablePage() {
   if (state.approvalPage < 1) state.approvalPage = 1;
   const start = (state.approvalPage - 1) * PAGE_SIZE_APPROVAL;
   const pageRows = rows.slice(start, start + PAGE_SIZE_APPROVAL);
-
   const pager = $('approvalPager');
   if (pager) pager.classList.toggle('hidden', rows.length <= PAGE_SIZE_APPROVAL);
   const pageInfo = $('approvalPageInfo');
   if (pageInfo) pageInfo.textContent = state.approvalPage + ' / ' + max;
-
-  const excelButtonHtml = rows.length > 0
-    ? `<button type="button" class="excel-download-btn" onclick="downloadApprovalExcel()">📥 엑셀 다운로드</button>`
-    : '';
-
+  const excelButtonHtml = rows.length > 0 ? `<button type="button" class="excel-download-btn" onclick="downloadApprovalExcel()">📥 엑셀 다운로드</button>` : '';
   if (!pageRows.length) {
-    result.innerHTML = `
-      <div class="data-result-head">
-        <div><span class="data-result-kicker">산재승인 조회 결과</span><strong>조회된 데이터가 없습니다.</strong></div>
-        <div class="data-result-actions">
-          <span class="data-result-count">총 0건</span>
-        </div>
-      </div>
-      <div class="empty-message">조건에 맞는 산재승인 데이터가 없습니다.</div>`;
+    result.innerHTML = `<div class="data-result-head"><div><span class="data-result-kicker">산재 승인 사고 조회 결과</span><strong>조회된 데이터가 없습니다.</strong></div><div class="data-result-actions"><span class="data-result-count">총 0건</span></div></div><div class="empty-message">조건에 맞는 산재 승인 사고 데이터가 없습니다.</div>`;
     return;
   }
-
   result.innerHTML = `
-    <div class="data-result-head">
-      <div>
-        <span class="data-result-kicker">산재승인 조회 결과</span>
-        <strong>승인/KPI 관리 목록</strong>
-      </div>
-      <div class="data-result-actions">
-        <span class="data-result-count">총 ${rows.length}건</span>
-        ${excelButtonHtml}
-      </div>
-    </div>
-    <div class="approval-table-scroll">
-      <table class="approval-table">
-        <thead>
-          <tr>
-            <th>재해일자</th>
-            <th>영업부</th>
-            <th>팀</th>
-            <th>매장명</th>
-            <th>재해유형</th>
-            <th>산재승인</th>
-            <th>근로손실일수</th>
-            <th>KPI분류</th>
-            <th>사고내용</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pageRows.map(r => `
-            <tr onclick="openDetail('${escapeAttr(r.recordId)}')">
-              <td>${esc(r.accidentDate || '-')}</td>
-              <td>${esc(cleanDeptName(r.stdDept || '-'))}</td>
-              <td>${esc(r.stdTeam || '-')}</td>
-              <td class="approval-store-cell">${esc(r.store || '-')}</td>
-              <td>${esc(r.accidentType || '미분류')}</td>
-              <td>${makeApprovalBadge(r.approvalYn, 'approval')}</td>
-              <td class="approval-days-cell">${esc(r.lostDays || '-')}</td>
-              <td>${makeApprovalBadge(r.kpiCategory, 'kpi')}</td>
-              <td class="approval-content-cell">${esc(shorten(r.accidentContent, 70))}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
+    <div class="data-result-head"><div><span class="data-result-kicker">산재 승인 사고 조회 결과</span><strong>업무상 사고 승인/KPI 관리 목록</strong></div><div class="data-result-actions"><span class="data-result-count">총 ${rows.length}건</span>${excelButtonHtml}</div></div>
+    <div class="approval-table-scroll"><table class="approval-table"><thead><tr><th>재해일자</th><th>영업부</th><th>팀</th><th>매장명</th><th>재해유형</th><th>산재승인</th><th>근로손실일수</th><th>KPI분류</th><th>사고내용</th></tr></thead><tbody>
+      ${pageRows.map(r => `<tr onclick="openDetail('${escapeAttr(r.recordId)}')"><td>${esc(r.accidentDate || '-')}</td><td>${esc(cleanDeptName(r.stdDept || '-'))}</td><td>${esc(r.stdTeam || '-')}</td><td class="approval-store-cell">${esc(r.store || '-')}</td><td>${esc(r.accidentType || '미분류')}</td><td>${makeApprovalBadge(r.approvalYn, 'approval')}</td><td class="approval-days-cell">${esc(r.lostDays || '-')}</td><td>${makeApprovalBadge(r.kpiCategory, 'kpi')}</td><td class="approval-content-cell">${esc(shorten(r.accidentContent, 70))}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function renderSevereFilters() {
+  const container = $('severeFilterContainer');
+  if (!container || !state.initFilterData) return;
+  const f = state.approvalFilters;
+  const numericYears = (state.initFilterData.years || []).filter(y => y !== '전체');
+  container.innerHTML = `<div class="approval-filter-head"><div><span>중상해 매장 조회 필터</span></div><button type="button" id="severeReloadBtn" class="btn-sub">조회</button></div><div class="approval-filter-row"><label>연도<select id="severeYear">${numericYears.map(y => `<option value="${esc(y)}" ${String(y) === String(f.year) ? 'selected' : ''}>${esc(y)}</option>`).join('')}</select></label><label>월<select id="severeMonth">${getApprovalMonthOptions().map(m => `<option value="${esc(m)}" ${String(m) === String(f.month) ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select></label><label class="store-search-label">매장명 검색<input id="severeStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력"></label><button type="button" id="severeResetBtn" class="btn-sub btn-light">초기화</button></div>`;
+  $('severeYear').addEventListener('change', e => { f.year = e.target.value; loadSevereStoreData(); });
+  $('severeMonth').addEventListener('change', e => { f.month = e.target.value; loadSevereStoreData(); });
+  $('severeStoreSearch').addEventListener('input', e => { f.storeSearch = e.target.value; });
+  $('severeStoreSearch').addEventListener('keydown', e => { if (e.key === 'Enter') loadSevereStoreData(); });
+  $('severeReloadBtn').addEventListener('click', () => loadSevereStoreData());
+  $('severeResetBtn').addEventListener('click', () => resetApprovalFilters());
+}
+
+async function loadSevereStoreData(options = {}) {
+  if (!isSafetyTeamLogin()) return;
+  const f = state.approvalFilters;
+  if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
+  showLoading(options.loadingMessage || '중상해 매장 데이터를 조회 중입니다');
+  try {
+    const queryFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+    const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
+    state.approvalBaseRows = res.rows || [];
+    state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
+    state.approvalSevereRows = getSevereStoreGroups(state.approvalRows);
+    state.severePage = 1;
+    renderSevereFilters();
+    renderSevereKpis();
+    renderSevereStorePage();
+  } catch (err) {
+    alert('중상해 매장 조회 오류: ' + (err.message || err));
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderSevereKpis() {
+  const grid = $('severeKpiGrid');
+  if (!grid) return;
+  const severeRows = (state.approvalRows || []).filter(isSevereRow);
+  const stores = getSevereStoreGroups(state.approvalRows || []);
+  const riskStores = stores.filter(s => s.count >= 2);
+  grid.innerHTML = `<article class="approval-kpi-card approval-kpi-severe"><span>91일 이상 재해</span><strong>${severeRows.length}건</strong><small>업무상 사고 승인 기준</small></article><article class="approval-kpi-card approval-kpi-approved"><span>발생 매장</span><strong>${stores.length}개</strong><small>91일 이상 재해 발생</small></article><article class="approval-kpi-card approval-kpi-target"><span>2건 이상 매장</span><strong>${riskStores.length}개</strong><small>집중 모니터링 대상</small></article><article class="approval-kpi-card approval-kpi-days"><span>중상해 근로손실일수</span><strong>${sumLostDays(severeRows).toLocaleString()}일</strong><small>91일 이상 건 합계</small></article>`;
+}
+
+function renderSevereStorePage() {
+  const result = $('severeResult');
+  if (!result) return;
+  const rows = state.approvalSevereRows || [];
+  const max = Math.max(1, Math.ceil(rows.length / PAGE_SIZE_APPROVAL));
+  if (state.severePage > max) state.severePage = max;
+  const start = (state.severePage - 1) * PAGE_SIZE_APPROVAL;
+  const pageRows = rows.slice(start, start + PAGE_SIZE_APPROVAL);
+  if ($('severePager')) $('severePager').classList.toggle('hidden', rows.length <= PAGE_SIZE_APPROVAL);
+  if ($('severePageInfo')) $('severePageInfo').textContent = state.severePage + ' / ' + max;
+  if (!pageRows.length) {
+    result.innerHTML = `<div class="data-result-head"><div><span class="data-result-kicker">중상해 매장 TOP 10</span><strong>조회된 매장이 없습니다.</strong></div><span class="data-result-count">총 0개</span></div><div class="empty-message">91일 이상 중상해 매장이 없습니다.</div>`;
+    return;
+  }
+  result.innerHTML = `<div class="data-result-head"><div><span class="data-result-kicker">중상해 매장 TOP 10</span><strong>91일 이상 재해 매장 목록</strong></div><span class="data-result-count">총 ${rows.length}개</span></div><div class="approval-table-scroll"><table class="approval-table severe-table"><thead><tr><th>순위</th><th>매장명</th><th>영업부</th><th>팀</th><th>91일 이상 건수</th><th>총 근로손실일수</th><th>최장 근로손실일수</th><th>주요 재해유형</th><th>관리구분</th></tr></thead><tbody>${pageRows.map((r, i) => `<tr class="${r.count >= 2 ? 'severe-risk-row' : ''}"><td>${start + i + 1}</td><td class="approval-store-cell">${esc(r.store)}</td><td>${esc(cleanDeptName(r.dept))}</td><td>${esc(r.team)}</td><td><strong>${r.count}건</strong></td><td>${Number(r.totalLostDays || 0).toLocaleString()}일</td><td>${Number(r.maxLostDays || 0).toLocaleString()}일</td><td>${esc(r.topType)}</td><td>${r.count >= 2 ? '<span class="approval-badge warn">2건 이상</span>' : '<span class="approval-badge target">모니터링</span>'}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 /* ============ PPT 캡처 전용 모달 동작 ============ */
@@ -2257,119 +2337,56 @@ async function buildApprovalSummarySvgForSafety(selectedYear, selectedMonth, log
 
 function buildApprovalSummaryStats(rows) {
   const visibleRows = getApprovalVisibleBaseRows(rows || []);
-  const kpiTargets = getKpiTargetCategories();
   const kpiRows = visibleRows.filter(r => isKpiTargetCategory(r.kpiCategory));
-  const excludeRows = visibleRows.filter(r => !isKpiTargetCategory(r.kpiCategory));
-  const unmatchedRows = visibleRows.filter(r => String(r.kpiCategory || '').includes('미매칭'));
+  const severeRows = visibleRows.filter(isSevereRow);
   const lostDays = sumLostDays(visibleRows);
-  const categoryCounts = {};
-  kpiRows.forEach(r => {
-    const key = String(r.kpiCategory || '').trim();
-    if (key) categoryCounts[key] = (categoryCounts[key] || 0) + 1;
-  });
-  const kpiCounts = kpiTargets.map(label => ({ label, count: categoryCounts[label] || 0 }));
-  const allCategories = kpiCounts.slice().sort((a, b) => b.count - a.count);
-  return { visibleRows, kpiRows, excludeRows, unmatchedRows, lostDays, kpiCounts, allCategories };
+  const severeStores = getSevereStoreGroups(visibleRows);
+  const typeCounts = makeCountRows_(kpiRows, 'kpiCategory');
+  const lossByDept = makeSumRows_(visibleRows, 'stdDept', 'lostDays').map(r => ({ ...r, label: cleanDeptName(r.label) })).slice(0, 5);
+  return { visibleRows, kpiRows, severeRows, lostDays, severeStores, typeCounts, lossByDept };
 }
 
 function buildApprovalSummarySvgReport(ctx) {
   const stats = buildApprovalSummaryStats(ctx.rows || []);
   const monthNum = Number(String(ctx.monthText).replace('월', '')) || 0;
   const monthLastDay = monthNum ? getLastDayOfMonth(ctx.year, monthNum) : '31';
-  const topKpi = stats.kpiCounts.slice().sort((a, b) => b.count - a.count)[0] || { label: '-', count: 0 };
+  const topKpi = stats.typeCounts[0] || { label: '-', count: 0 };
   const yearCounts = buildApprovalYearCountsForSvg(ctx.rows || [], ctx.monthText);
   const maxYear = Math.max(1, ...yearCounts.map(r => r.count));
-  const maxCat = Math.max(1, ...stats.kpiCounts.map(r => r.count));
+  const maxType = Math.max(1, ...stats.typeCounts.map(r => r.count));
+  const maxLoss = Math.max(1, ...stats.lossByDept.map(r => r.count));
 
-  const barBaseY = 500;
-  const barChartH = 175;
-  const barXs = [132, 260, 388];
+  const barBaseY = 478;
+  const barChartH = 145;
+  const barXs = [116, 245, 374];
   const yearBars = yearCounts.map((r, i) => {
     const h = Math.max(6, Math.round((r.count / maxYear) * barChartH));
     return { ...r, x: barXs[i], h, y: barBaseY - h };
   });
-  const trendPath = yearBars.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x + 34} ${p.y - 16}`).join(' ');
-
-  const kpiBars = stats.kpiCounts.map((r, i) => {
-    const y = 350 + i * 70;
-    const width = Math.max(6, Math.round((r.count / maxCat) * 350));
-    const color = i === 0 ? '#0b2f86' : (i === 1 ? '#ff1a1a' : '#777777');
-    return `
-      <text x="744" y="${y}" class="dark" font-size="22" font-weight="900">${svgEsc(r.label)}</text>
-      <rect x="928" y="${y-18}" width="350" height="18" rx="9" fill="#edf0f5"/>
-      <rect x="928" y="${y-18}" width="${width}" height="18" rx="9" fill="${color}"/>
-      <text x="1228" y="${y}" text-anchor="end" class="dark" font-size="22" font-weight="900">${r.count}건</text>`;
+  const trendPath = yearBars.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x + 34} ${p.y - 12}`).join(' ');
+  const typeBars = stats.typeCounts.map((r, i) => {
+    const y = 338 + i * 54;
+    const width = Math.max(6, Math.round((r.count / maxType) * 270));
+    return `<text x="690" y="${y}" class="dark" font-size="18" font-weight="900">${svgEsc(r.label)}</text><rect x="865" y="${y-15}" width="270" height="16" rx="8" fill="#edf0f5"/><rect x="865" y="${y-15}" width="${width}" height="16" rx="8" fill="${i === 0 ? '#0b2f86' : (i === 1 ? '#ff1a1a' : '#777')}"/><text x="1170" y="${y}" text-anchor="end" class="dark" font-size="18" font-weight="900">${r.count}건</text>`;
+  }).join('');
+  const lossBars = stats.lossByDept.map((r, i) => {
+    const y = 500 + i * 28;
+    const width = Math.max(6, Math.round((r.count / maxLoss) * 270));
+    return `<text x="690" y="${y}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 12))}</text><rect x="865" y="${y-12}" width="270" height="12" rx="6" fill="#edf0f5"/><rect x="865" y="${y-12}" width="${width}" height="12" rx="6" fill="#ff1a1a"/><text x="1170" y="${y}" text-anchor="end" class="dark" font-size="15" font-weight="900">${Number(r.count||0).toLocaleString()}일</text>`;
   }).join('');
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
-  <defs>
-    <style>
-      .font { font-family: 'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif; }
-      .navy { fill: #0b2f86; }
-      .red { fill: #ff1a1a; }
-      .dark { fill: #222; }
-      .muted { fill: #555; }
-      .title { font-size: 46px; font-weight: 900; letter-spacing: -2px; }
-      .sub { font-size: 18px; font-weight: 800; }
-      .panel-title { font-size: 22px; font-weight: 900; }
-      .shadow { filter: drop-shadow(0px 4px 8px rgba(0,0,0,.12)); }
-    </style>
-    <linearGradient id="approvalSvgBarGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ff2b2b"/>
-      <stop offset="100%" stop-color="#d90000"/>
-    </linearGradient>
-  </defs>
-  <rect width="1280" height="720" fill="#ffffff"/>
+  <defs><style>.font{font-family:'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif}.navy{fill:#0b2f86}.red{fill:#ff1a1a}.dark{fill:#222}.muted{fill:#555}.title{font-size:46px;font-weight:900;letter-spacing:-2px}.sub{font-size:18px;font-weight:800}.panel-title{font-size:20px;font-weight:900}.shadow{filter:drop-shadow(0px 4px 8px rgba(0,0,0,.12))}</style><linearGradient id="approvalSvgBarGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ff2b2b"/><stop offset="100%" stop-color="#d90000"/></linearGradient></defs>
+  <rect width="1280" height="720" fill="#fff"/>
   <g class="font">
     ${ctx.logoDataUrl ? `<image href="${ctx.logoDataUrl}" x="1030" y="38" width="174" height="70" preserveAspectRatio="xMidYMid meet"/>` : ''}
     <text x="640" y="70" text-anchor="middle" class="title navy">${svgEsc(ctx.year)}년 ${svgEsc(ctx.monthText)} 산재승인 및 KPI <tspan class="red">집계 현황</tspan></text>
     <text x="640" y="104" text-anchor="middle" class="sub dark">안전보건팀 / 기준: ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.01 ~ ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.${monthLastDay}</text>
-
-    <g class="shadow">
-      <rect x="64" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="92" y="169" class="dark" font-size="20" font-weight="900">KPI 집계대상</text>
-      <text x="92" y="216" class="red" font-size="42" font-weight="900">${stats.kpiRows.length}건</text>
-
-      <rect x="364" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="392" y="169" class="dark" font-size="20" font-weight="900">업무상 사고 승인</text>
-      <text x="392" y="216" class="navy" font-size="42" font-weight="900">${stats.visibleRows.length}건</text>
-
-      <rect x="664" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="692" y="169" class="dark" font-size="20" font-weight="900">KPI 제외</text>
-      <text x="692" y="216" fill="#777" font-size="42" font-weight="900">${stats.excludeRows.length}건</text>
-
-      <rect x="964" y="135" width="250" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="992" y="169" class="dark" font-size="20" font-weight="900">총 근로손실일수</text>
-      <text x="992" y="216" class="red" font-size="42" font-weight="900">${stats.lostDays.toLocaleString()}일</text>
-    </g>
-
-    <g>
-      <rect x="54" y="276" width="590" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="82" y="318" class="panel-title navy">3개년 KPI 반영 건수 비교</text>
-      ${yearBars.map((p, i) => `
-        <text x="${p.x+34}" y="${p.y-28}" text-anchor="middle" class="dark" font-size="22" font-weight="900">${p.count}건</text>
-        <rect x="${p.x}" y="${p.y}" width="68" height="${p.h}" rx="14" fill="${i === 2 ? 'url(#approvalSvgBarGrad)' : '#0b2f86'}" opacity="${i === 2 ? '1' : '.88'}"/>
-        <text x="${p.x+34}" y="540" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.year}</text>
-      `).join('')}
-      <path d="${trendPath}" fill="none" stroke="#ff1a1a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 8"/>
-      ${yearBars.map(p => `<circle cx="${p.x+34}" cy="${p.y-16}" r="7" fill="#ff1a1a"/>`).join('')}
-    </g>
-
-    <g>
-      <rect x="690" y="276" width="530" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="724" y="318" class="panel-title navy">KPI 분류별 건수</text>
-      ${kpiBars}
-      <line x1="724" y1="520" x2="1178" y2="520" stroke="#e5e7eb"/>
-      <text x="724" y="555" class="dark" font-size="17" font-weight="900">확인 필요</text>
-      <text x="850" y="555" class="muted" font-size="16" font-weight="800">원본DB 미매칭 ${stats.unmatchedRows.length}건 · 근로손실일수 공란 ${stats.visibleRows.filter(r => !Number(r.lostDays || 0)).length}건</text>
-    </g>
-
-    <g>
-      <rect x="54" y="616" width="1166" height="72" rx="18" fill="#fff7f7" stroke="#ffc7c7"/>
-      <text x="84" y="657" class="red" font-size="22" font-weight="900">핵심 포인트</text>
-      <text x="226" y="657" class="dark" font-size="17" font-weight="900">이번 달 KPI 반영 대상은 <tspan class="red">${stats.kpiRows.length}건</tspan>이며, 최다 KPI 분류는 <tspan class="red">${svgEsc(topKpi.label)}</tspan>입니다. 업무상 사고 승인 기준으로 집계했습니다.</text>
-    </g>
+    <g class="shadow"><rect x="64" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="92" y="169" class="dark" font-size="20" font-weight="900">업무상 사고 승인</text><text x="92" y="216" class="navy" font-size="42" font-weight="900">${stats.visibleRows.length}건</text><rect x="364" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="392" y="169" class="dark" font-size="20" font-weight="900">KPI 집계대상</text><text x="392" y="216" class="red" font-size="42" font-weight="900">${stats.kpiRows.length}건</text><rect x="664" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="692" y="169" class="dark" font-size="20" font-weight="900">총 근로손실일수</text><text x="692" y="216" class="red" font-size="42" font-weight="900">${stats.lostDays.toLocaleString()}일</text><rect x="964" y="135" width="250" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="992" y="169" class="dark" font-size="20" font-weight="900">91일 이상 중상해</text><text x="992" y="216" fill="#777" font-size="42" font-weight="900">${stats.severeRows.length}건</text></g>
+    <g><rect x="54" y="276" width="570" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="82" y="318" class="panel-title navy">3개년 KPI 반영 건수 비교</text><path d="${trendPath}" fill="none" stroke="#ff1a1a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 8" opacity=".85"/>${yearBars.map(p=>`<circle cx="${p.x+34}" cy="${p.y-12}" r="7" fill="#ff1a1a"/>`).join('')}${yearBars.map((p,i)=>`<rect x="${p.x}" y="${p.y}" width="68" height="${p.h}" rx="14" fill="${i===2?'url(#approvalSvgBarGrad)':'#0b2f86'}" opacity="${i===2?'1':'.88'}"/><text x="${p.x+34}" y="${Math.max(338,p.y-31)}" text-anchor="middle" class="dark" font-size="22" font-weight="900">${p.count}건</text><text x="${p.x+34}" y="535" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.year}</text>`).join('')}</g>
+    <g><rect x="654" y="276" width="570" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/><text x="690" y="318" class="panel-title navy">KPI 분류별 건수</text>${typeBars}<line x1="690" y1="455" x2="1178" y2="455" stroke="#e5e7eb"/><text x="690" y="482" class="panel-title navy">영업부별 근로손실일수</text>${lossBars}</g>
+    <g><rect x="54" y="616" width="1166" height="72" rx="18" fill="#fff7f7" stroke="#ffc7c7"/><text x="84" y="657" class="red" font-size="22" font-weight="900">핵심 포인트</text><text x="226" y="657" class="dark" font-size="17" font-weight="900">업무상 사고 승인 기준 KPI 반영 대상은 <tspan class="red">${stats.kpiRows.length}건</tspan>이며, 최다 KPI 분류는 <tspan class="red">${svgEsc(topKpi.label)}</tspan>입니다. 91일 이상 중상해 ${stats.severeRows.length}건을 모니터링합니다.</text></g>
   </g>
 </svg>`;
 }
@@ -2377,10 +2394,7 @@ function buildApprovalSummarySvgReport(ctx) {
 function buildApprovalYearCountsForSvg(rows, monthText) {
   const years = ['2024', '2025', '2026'];
   const visible = getApprovalVisibleBaseRows(rows || []);
-  return years.map(year => ({
-    year,
-    count: visible.filter(r => String(r.year) === year && isKpiTargetCategory(r.kpiCategory)).length
-  }));
+  return years.map(year => ({ year, count: visible.filter(r => String(r.year) === year && isKpiTargetCategory(r.kpiCategory)).length }));
 }
 
 async function getLogoDataUrl() {
