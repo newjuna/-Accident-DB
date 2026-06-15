@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbw7_wi6OCZ2EMMtaNpnl25FGheLbBr9yDlCSqClnJBcXIp8sLssW2jaKwY1NIIM2G39ow/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -52,6 +52,20 @@ const state = {
     team: '전체',
     storeSearch: ''
   },
+
+  // 산재승인 조회 전용 상태(안전보건팀 로그인 전용)
+  approvalBaseRows: [],
+  approvalRows: [],
+  approvalPage: 1,
+  approvalFilters: {
+    year: '',
+    month: '전체',
+    dept: '전체',
+    team: '전체',
+    storeSearch: '',
+    approvalYn: 'Y',
+    kpiCategory: '전체'
+  },
   
   // 반복사고 영업부별 필터링 상태 (맵 ➡️ 리스트 인터랙티브 연동)
   selectedRegionFilter: null,
@@ -70,7 +84,8 @@ const state = {
 
 const PAGE_SIZE_MODAL = 5;
 const PAGE_SIZE_DATA = 10;
-const PAGE_SIZE_REPEAT = 10; 
+const PAGE_SIZE_REPEAT = 10;
+const PAGE_SIZE_APPROVAL = 10; 
 
 // AI 조언용 5초 타이머 디바운싱용 전역 핸들
 let aiAdviceTimer = null; 
@@ -149,6 +164,16 @@ function cleanDeptName(name) {
   return String(name || '').replace(/영업부/g, '').trim();
 }
 
+function isSafetyTeamLogin() {
+  return state.division === '안전보건팀';
+}
+
+function toggleSafetyOnlyFeatures() {
+  const approvalNav = $('approvalNav');
+  if (!approvalNav) return;
+  approvalNav.classList.toggle('hidden', !isSafetyTeamLogin());
+}
+
 /* ============ 이벤트 바인딩 ============ */
 window.addEventListener('load', () => {
   // 로그인
@@ -179,6 +204,15 @@ window.addEventListener('load', () => {
     if (state.dataPage < max) { state.dataPage++; renderDataTablePage(); }
   });
 
+  // 산재승인 조회 페이지네이션
+  if ($('approvalPrev')) $('approvalPrev').addEventListener('click', () => {
+    if (state.approvalPage > 1) { state.approvalPage--; renderApprovalTablePage(); }
+  });
+  if ($('approvalNext')) $('approvalNext').addEventListener('click', () => {
+    const max = Math.max(1, Math.ceil(state.approvalRows.length / PAGE_SIZE_APPROVAL));
+    if (state.approvalPage < max) { state.approvalPage++; renderApprovalTablePage(); }
+  });
+
   // 리스트 모달 페이지네이션
   $('listPrev').addEventListener('click', () => {
     if (state.listPage > 1) { state.listPage--; renderListModalPage(); }
@@ -207,6 +241,7 @@ async function login() {
   try {
     const res = await callAPI({ action: 'login', division, password });
     state.division = res.division;
+    toggleSafetyOnlyFeatures();
     const sideDiv = $('sideDivision');
     if (sideDiv) sideDiv.textContent = state.division;
     $('loginView').classList.add('hidden');
@@ -250,6 +285,8 @@ async function initAfterLogin() {
     
     // 데이터 조회 최초 연도 필터 상태 세팅
     state.activeFilters.year = init.defaultYear;
+    state.approvalFilters.year = init.defaultYear;
+    state.approvalFilters.month = '전체';
 
     // 대시보드 즉시 그리기
     renderDashboard(dashboardData || {});
@@ -957,6 +994,11 @@ function toggleRegionFilter(dept) {
 
 /* ============ 페이지 전환 (로딩창 노출 최적화) ============ */
 function switchView(view) {
+  if (view === 'approval' && !isSafetyTeamLogin()) {
+    alert('산재승인 조회는 안전보건팀 로그인에서만 사용할 수 있습니다.');
+    view = 'dashboard';
+  }
+
   state.currentView = view;
   document.querySelectorAll('.nav[data-view]').forEach(b =>
     b.classList.toggle('active', b.dataset.view === view)
@@ -964,17 +1006,23 @@ function switchView(view) {
   $('dashboardPage').classList.toggle('hidden', view !== 'dashboard');
   $('dataPage').classList.toggle('hidden', view !== 'data');
   $('repeatPage').classList.toggle('hidden', view !== 'repeat');
+  if ($('approvalPage')) $('approvalPage').classList.toggle('hidden', view !== 'approval');
   
   if (view === 'data') {
-    // 순차 드롭다운 UI 최초 렌더링
     renderDataFilters();
     renderDataTablePage();
   }
   if (view === 'repeat') {
-    state.selectedRegionFilter = null; // 초기 진입 시 전체 노출
+    state.selectedRegionFilter = null;
     state.repeatPage = 1;
     renderRepeatFull();
     renderRegionMap();
+  }
+  if (view === 'approval') {
+    if (!state.approvalFilters.year && state.initFilterData) {
+      state.approvalFilters.year = state.initFilterData.defaultYear || state.currentYear;
+    }
+    loadApprovalData({ loadingMessage: '산재승인 데이터를 불러오는 중입니다' });
   }
 }
 
@@ -1592,6 +1640,266 @@ function renderDataTablePage() {
   }
 }
 
+
+/* ============ 산재승인 조회 화면 ============ */
+
+function getApprovalMonthOptions() {
+  return ['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
+}
+
+function isApprovedRow(r) {
+  return String((r || {}).approvalYn || '').trim().toUpperCase() === 'Y';
+}
+
+function getKpiTargetCategories() {
+  return ['넘어짐', '무리한 동작', '물체에 맞음'];
+}
+
+function isKpiTargetCategory(v) {
+  return getKpiTargetCategories().includes(String(v || '').trim());
+}
+
+function sumLostDays(rows) {
+  return (rows || []).reduce((s, r) => s + (Number(r.lostDays || 0) || 0), 0);
+}
+
+function uniqueValues(rows, field) {
+  return [...new Set((rows || []).map(r => r[field]).filter(Boolean))].sort();
+}
+
+function applyApprovalClientFilters(rows) {
+  const f = state.approvalFilters;
+  let out = [...(rows || [])];
+  if (f.dept && f.dept !== '전체') out = out.filter(r => r.stdDept === f.dept);
+  if (f.team && f.team !== '전체') out = out.filter(r => r.stdTeam === f.team);
+  if (f.approvalYn === 'Y') out = out.filter(r => isApprovedRow(r));
+  if (f.approvalYn === '미승인') out = out.filter(r => !isApprovedRow(r));
+  if (f.kpiCategory && f.kpiCategory !== '전체') {
+    if (f.kpiCategory === '공란') out = out.filter(r => !String(r.kpiCategory || '').trim());
+    else out = out.filter(r => String(r.kpiCategory || '') === f.kpiCategory);
+  }
+  return out;
+}
+
+function renderApprovalKpis() {
+  const grid = $('approvalKpiGrid');
+  if (!grid) return;
+  const rows = state.approvalRows || [];
+  const approvedRows = rows.filter(isApprovedRow);
+  const kpiRows = approvedRows.filter(r => isKpiTargetCategory(r.kpiCategory));
+  const commuteRows = approvedRows.filter(r => String(r.kpiCategory || '').includes('출퇴근'));
+  const lostDays = sumLostDays(approvedRows);
+
+  grid.innerHTML = `
+    <article class="approval-kpi-card approval-kpi-approved">
+      <span>산재승인 건수</span>
+      <strong>${approvedRows.length}건</strong>
+      <small>산재승인 유무 Y 기준</small>
+    </article>
+    <article class="approval-kpi-card approval-kpi-days">
+      <span>총 근로손실일수</span>
+      <strong>${lostDays.toLocaleString()}일</strong>
+      <small>요양시작일~종료일 기준</small>
+    </article>
+    <article class="approval-kpi-card approval-kpi-target">
+      <span>KPI 집계대상</span>
+      <strong>${kpiRows.length}건</strong>
+      <small>넘어짐·무리한 동작·물체에 맞음</small>
+    </article>
+    <article class="approval-kpi-card approval-kpi-exclude">
+      <span>출퇴근 제외</span>
+      <strong>${commuteRows.length}건</strong>
+      <small>KPI 제외(출퇴근)</small>
+    </article>
+  `;
+}
+
+function renderApprovalFilters() {
+  const container = $('approvalFiltersContainer');
+  if (!container || !state.initFilterData) return;
+  const f = state.approvalFilters;
+  const numericYears = (state.initFilterData.years || []).filter(y => y !== '전체');
+  const baseRows = state.approvalBaseRows || [];
+  const deptOptions = uniqueValues(baseRows, 'stdDept');
+  const teamSource = f.dept && f.dept !== '전체' ? baseRows.filter(r => r.stdDept === f.dept) : baseRows;
+  const teamOptions = uniqueValues(teamSource, 'stdTeam');
+  const kpiOptions = ['전체', ...getKpiTargetCategories(), 'KPI 제외', 'KPI 제외(출퇴근)', '원본DB 미매칭', '공란'];
+
+  container.innerHTML = `
+    <div class="approval-filter-head">
+      <div>
+        <span>산재승인 조회 필터</span>
+        <small>원본DB AC~AE 기준으로 안전보건팀만 조회합니다.</small>
+      </div>
+      <button type="button" id="approvalReloadBtn" class="btn-sub">조회</button>
+    </div>
+    <div class="approval-filter-row">
+      <label>연도<select id="approvalYear">
+        ${numericYears.map(y => `<option value="${esc(y)}" ${String(y) === String(f.year) ? 'selected' : ''}>${esc(y)}</option>`).join('')}
+      </select></label>
+      <label>월<select id="approvalMonth">
+        ${getApprovalMonthOptions().map(m => `<option value="${esc(m)}" ${String(m) === String(f.month) ? 'selected' : ''}>${esc(m)}</option>`).join('')}
+      </select></label>
+      <label>영업부<select id="approvalDept"><option value="전체">전체</option>
+        ${deptOptions.map(d => `<option value="${esc(d)}" ${String(d) === String(f.dept) ? 'selected' : ''}>${esc(cleanDeptName(d))}</option>`).join('')}
+      </select></label>
+      <label>팀<select id="approvalTeam"><option value="전체">전체</option>
+        ${teamOptions.map(t => `<option value="${esc(t)}" ${String(t) === String(f.team) ? 'selected' : ''}>${esc(t)}</option>`).join('')}
+      </select></label>
+      <label>산재승인<select id="approvalYn">
+        ${['전체', 'Y', '미승인'].map(v => `<option value="${v}" ${String(v) === String(f.approvalYn) ? 'selected' : ''}>${v === 'Y' ? '승인 Y' : v}</option>`).join('')}
+      </select></label>
+      <label>KPI분류<select id="approvalKpiCategory">
+        ${kpiOptions.map(v => `<option value="${esc(v)}" ${String(v) === String(f.kpiCategory) ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+      </select></label>
+      <label class="store-search-label">매장명 검색<input id="approvalStoreSearch" value="${esc(f.storeSearch)}" placeholder="매장명 입력"></label>
+      <button type="button" id="approvalResetBtn" class="btn-sub btn-light">초기화</button>
+    </div>
+  `;
+
+  const reload = () => loadApprovalData();
+  const rerender = () => {
+    state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
+    state.approvalPage = 1;
+    renderApprovalFilters();
+    renderApprovalKpis();
+    renderApprovalTablePage();
+  };
+
+  $('approvalYear').addEventListener('change', e => { f.year = e.target.value; f.dept = '전체'; f.team = '전체'; reload(); });
+  $('approvalMonth').addEventListener('change', e => { f.month = e.target.value; f.dept = '전체'; f.team = '전체'; reload(); });
+  $('approvalDept').addEventListener('change', e => { f.dept = e.target.value; f.team = '전체'; rerender(); });
+  $('approvalTeam').addEventListener('change', e => { f.team = e.target.value; rerender(); });
+  $('approvalYn').addEventListener('change', e => { f.approvalYn = e.target.value; rerender(); });
+  $('approvalKpiCategory').addEventListener('change', e => { f.kpiCategory = e.target.value; rerender(); });
+  $('approvalStoreSearch').addEventListener('input', e => { f.storeSearch = e.target.value; });
+  $('approvalStoreSearch').addEventListener('keydown', e => { if (e.key === 'Enter') reload(); });
+  $('approvalReloadBtn').addEventListener('click', reload);
+  $('approvalResetBtn').addEventListener('click', () => resetApprovalFilters());
+}
+
+async function loadApprovalData(options = {}) {
+  if (!isSafetyTeamLogin()) return;
+  const f = state.approvalFilters;
+  if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
+  showLoading(options.loadingMessage || '산재승인 데이터를 조회 중입니다');
+  try {
+    const queryFilters = {
+      year: f.year,
+      month: f.month || '전체',
+      dept: '전체',
+      team: '전체',
+      store: '전체',
+      type: '전체',
+      storeSearch: f.storeSearch || ''
+    };
+    const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
+    state.approvalBaseRows = res.rows || [];
+    state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
+    state.approvalPage = 1;
+    renderApprovalFilters();
+    renderApprovalKpis();
+    renderApprovalTablePage();
+  } catch (err) {
+    alert('산재승인 조회 오류: ' + (err.message || err));
+  } finally {
+    hideLoading();
+  }
+}
+
+function resetApprovalFilters() {
+  state.approvalFilters = {
+    year: state.initFilterData ? state.initFilterData.defaultYear : state.currentYear,
+    month: '전체',
+    dept: '전체',
+    team: '전체',
+    storeSearch: '',
+    approvalYn: 'Y',
+    kpiCategory: '전체'
+  };
+  loadApprovalData({ loadingMessage: '산재승인 조회 조건을 초기화하는 중입니다' });
+}
+
+function makeApprovalBadge(value, type) {
+  const v = String(value || '').trim();
+  if (type === 'approval') {
+    return v === 'Y' ? '<span class="approval-badge ok">승인</span>' : '<span class="approval-badge wait">미승인</span>';
+  }
+  if (!v) return '<span class="approval-badge empty">공란</span>';
+  if (isKpiTargetCategory(v)) return `<span class="approval-badge target">${esc(v)}</span>`;
+  if (v.includes('출퇴근')) return `<span class="approval-badge commute">${esc(v)}</span>`;
+  if (v.includes('미매칭')) return `<span class="approval-badge warn">${esc(v)}</span>`;
+  return `<span class="approval-badge exclude">${esc(v)}</span>`;
+}
+
+function renderApprovalTablePage() {
+  const result = $('approvalResult');
+  if (!result) return;
+  const rows = state.approvalRows || [];
+  const max = Math.max(1, Math.ceil(rows.length / PAGE_SIZE_APPROVAL));
+  if (state.approvalPage > max) state.approvalPage = max;
+  if (state.approvalPage < 1) state.approvalPage = 1;
+  const start = (state.approvalPage - 1) * PAGE_SIZE_APPROVAL;
+  const pageRows = rows.slice(start, start + PAGE_SIZE_APPROVAL);
+
+  const pager = $('approvalPager');
+  if (pager) pager.classList.toggle('hidden', rows.length <= PAGE_SIZE_APPROVAL);
+  const pageInfo = $('approvalPageInfo');
+  if (pageInfo) pageInfo.textContent = state.approvalPage + ' / ' + max;
+
+  if (!pageRows.length) {
+    result.innerHTML = `
+      <div class="data-result-head">
+        <div><span class="data-result-kicker">산재승인 조회 결과</span><strong>조회된 데이터가 없습니다.</strong></div>
+        <span class="data-result-count">총 0건</span>
+      </div>
+      <div class="empty-message">조건에 맞는 산재승인 데이터가 없습니다.</div>`;
+    return;
+  }
+
+  result.innerHTML = `
+    <div class="data-result-head">
+      <div>
+        <span class="data-result-kicker">산재승인 조회 결과</span>
+        <strong>승인/KPI 관리 목록</strong>
+      </div>
+      <span class="data-result-count">총 ${rows.length}건</span>
+    </div>
+    <div class="approval-table-scroll">
+      <table class="approval-table">
+        <thead>
+          <tr>
+            <th>재해일자</th>
+            <th>영업부</th>
+            <th>팀</th>
+            <th>매장명</th>
+            <th>재해유형</th>
+            <th>산재승인</th>
+            <th>근로손실일수</th>
+            <th>KPI분류</th>
+            <th>사고내용</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${pageRows.map(r => `
+            <tr onclick="openDetail('${escapeAttr(r.recordId)}')">
+              <td>${esc(r.accidentDate || '-')}</td>
+              <td>${esc(cleanDeptName(r.stdDept || '-'))}</td>
+              <td>${esc(r.stdTeam || '-')}</td>
+              <td class="approval-store-cell">${esc(r.store || '-')}</td>
+              <td>${esc(r.accidentType || '미분류')}</td>
+              <td>${makeApprovalBadge(r.approvalYn, 'approval')}</td>
+              <td class="approval-days-cell">${esc(r.lostDays || '-')}</td>
+              <td>${makeApprovalBadge(r.kpiCategory, 'kpi')}</td>
+              <td class="approval-content-cell">${esc(shorten(r.accidentContent, 70))}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 /* ============ PPT 캡처 전용 모달 동작 ============ */
 async function openCaptureMode() {
   const modal = $('captureModal');
@@ -1628,10 +1936,17 @@ async function openCaptureMode() {
           }))
       ));
 
+      const approvalSvg = await buildApprovalSummarySvgForSafety(selectedYear, selectedMonth, logoDataUrl);
+      pages.push({
+        svg: approvalSvg,
+        label: '산재승인 및 KPI 집계 현황',
+        fileName: `산업재해_현황_요약_${selectedYear}년_${selectedMonth}_04_산재승인_KPI집계현황.png`
+      });
+
       state.currentSummarySvgs = pages;
       state.currentSummarySvg = pages[0] ? pages[0].svg : null;
       state.currentSummaryFileName = pages[0] ? pages[0].fileName : null;
-      state.currentSummaryZipName = `산업재해_현황_요약_${selectedYear}년_${selectedMonth}_안전보건팀_3장.zip`;
+      state.currentSummaryZipName = `산업재해_현황_요약_${selectedYear}년_${selectedMonth}_안전보건팀_4장.zip`;
     } else {
       const svg = await buildSummarySvgForDivision(state.division, state.division, selectedYear, selectedMonth, logoDataUrl, false);
       pages = [{
@@ -1707,6 +2022,140 @@ async function buildSummarySvgForDivision(division, displayDivision, selectedYea
     logoDataUrl,
     integrated: !!integrated
   });
+}
+
+
+async function buildApprovalSummarySvgForSafety(selectedYear, selectedMonth, logoDataUrl) {
+  const res = await callAPI({
+    action: 'query',
+    division: '안전보건팀',
+    filters: JSON.stringify({
+      year: selectedYear,
+      month: selectedMonth,
+      dept: '전체',
+      team: '전체',
+      store: '전체',
+      type: '전체',
+      storeSearch: ''
+    })
+  });
+  const rows = res.rows || [];
+  return buildApprovalSummarySvgReport({
+    year: selectedYear,
+    monthText: selectedMonth,
+    rows,
+    logoDataUrl
+  });
+}
+
+function buildApprovalSummaryStats(rows) {
+  const approvedRows = (rows || []).filter(isApprovedRow);
+  const kpiTargets = getKpiTargetCategories();
+  const kpiRows = approvedRows.filter(r => isKpiTargetCategory(r.kpiCategory));
+  const commuteRows = approvedRows.filter(r => String(r.kpiCategory || '').includes('출퇴근'));
+  const unmatchedRows = approvedRows.filter(r => String(r.kpiCategory || '').includes('미매칭'));
+  const lostDays = sumLostDays(approvedRows);
+  const categoryCounts = {};
+  approvedRows.forEach(r => {
+    const key = String(r.kpiCategory || '공란').trim() || '공란';
+    categoryCounts[key] = (categoryCounts[key] || 0) + 1;
+  });
+  const kpiCounts = kpiTargets.map(label => ({ label, count: categoryCounts[label] || 0 }));
+  const allCategories = Object.keys(categoryCounts)
+    .map(label => ({ label, count: categoryCounts[label] }))
+    .sort((a, b) => b.count - a.count);
+  return { approvedRows, kpiRows, commuteRows, unmatchedRows, lostDays, kpiCounts, allCategories };
+}
+
+function buildApprovalSummarySvgReport(ctx) {
+  const stats = buildApprovalSummaryStats(ctx.rows || []);
+  const monthNum = Number(String(ctx.monthText).replace('월', '')) || 0;
+  const monthLastDay = monthNum ? getLastDayOfMonth(ctx.year, monthNum) : '31';
+  const topKpi = stats.kpiCounts.slice().sort((a, b) => b.count - a.count)[0] || { label: '-', count: 0 };
+  const maxCat = Math.max(1, ...stats.allCategories.map(r => r.count));
+
+  const rowsSvg = (stats.allCategories.length ? stats.allCategories : [{ label: '데이터 없음', count: 0 }]).slice(0, 6).map((r, i) => {
+    const y = 342 + i * 43;
+    const width = Math.max(6, Math.round((r.count / maxCat) * 282));
+    const color = isKpiTargetCategory(r.label) ? '#0b2f86' : (String(r.label).includes('출퇴근') ? '#8a8f98' : '#ff1a1a');
+    return `
+      <text x="86" y="${y}" class="dark" font-size="18" font-weight="900">${svgEsc(r.label)}</text>
+      <rect x="272" y="${y-15}" width="310" height="14" rx="7" fill="#edf0f5"/>
+      <rect x="272" y="${y-15}" width="${width}" height="14" rx="7" fill="${color}"/>
+      <text x="616" y="${y}" text-anchor="end" class="dark" font-size="18" font-weight="900">${r.count}건</text>`;
+  }).join('');
+
+  const kpiRowsSvg = stats.kpiCounts.map((r, i) => {
+    const y = 360 + i * 62;
+    const color = i === 0 ? '#0b2f86' : (i === 1 ? '#ff1a1a' : '#999999');
+    return `
+      <circle cx="756" cy="${y-7}" r="17" fill="${color}"/>
+      <text x="756" y="${y-2}" text-anchor="middle" fill="#fff" font-size="14" font-weight="900">${i+1}</text>
+      <text x="792" y="${y}" class="dark" font-size="20" font-weight="900">${svgEsc(r.label)}</text>
+      <text x="1110" y="${y}" text-anchor="end" class="dark" font-size="22" font-weight="900">${r.count}건</text>`;
+  }).join('');
+
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <defs>
+    <style>
+      .font { font-family: 'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif; }
+      .navy { fill: #0b2f86; }
+      .red { fill: #ff1a1a; }
+      .dark { fill: #222; }
+      .muted { fill: #555; }
+      .title { font-size: 46px; font-weight: 900; letter-spacing: -2px; }
+      .sub { font-size: 18px; font-weight: 800; }
+      .panel-title { font-size: 22px; font-weight: 900; }
+      .shadow { filter: drop-shadow(0px 4px 8px rgba(0,0,0,.12)); }
+    </style>
+  </defs>
+  <rect width="1280" height="720" fill="#ffffff"/>
+  <g class="font">
+    ${ctx.logoDataUrl ? `<image href="${ctx.logoDataUrl}" x="1030" y="38" width="174" height="70" preserveAspectRatio="xMidYMid meet"/>` : ''}
+    <text x="640" y="70" text-anchor="middle" class="title navy">${svgEsc(ctx.year)}년 ${svgEsc(ctx.monthText)} 산재승인 및 KPI <tspan class="red">집계 현황</tspan></text>
+    <text x="640" y="104" text-anchor="middle" class="sub dark">안전보건팀 / 기준: ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.01 ~ ${svgEsc(ctx.year)}.${String(monthNum || '').padStart(2,'0')}.${monthLastDay}</text>
+
+    <g class="shadow">
+      <rect x="64" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="92" y="169" class="dark" font-size="20" font-weight="900">산재승인 건수</text>
+      <text x="92" y="216" class="red" font-size="42" font-weight="900">${stats.approvedRows.length}건</text>
+
+      <rect x="364" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="392" y="169" class="dark" font-size="20" font-weight="900">총 근로손실일수</text>
+      <text x="392" y="216" class="navy" font-size="42" font-weight="900">${stats.lostDays.toLocaleString()}일</text>
+
+      <rect x="664" y="135" width="270" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="692" y="169" class="dark" font-size="20" font-weight="900">KPI 집계대상</text>
+      <text x="692" y="216" class="red" font-size="42" font-weight="900">${stats.kpiRows.length}건</text>
+
+      <rect x="964" y="135" width="250" height="104" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="992" y="169" class="dark" font-size="20" font-weight="900">출퇴근 제외</text>
+      <text x="992" y="216" fill="#777" font-size="42" font-weight="900">${stats.commuteRows.length}건</text>
+    </g>
+
+    <g>
+      <rect x="54" y="276" width="600" height="314" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="82" y="316" class="panel-title navy">KPI집계현황분류 비중</text>
+      ${rowsSvg}
+    </g>
+
+    <g>
+      <rect x="690" y="276" width="530" height="314" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="724" y="316" class="panel-title navy">KPI 대상 TOP 3</text>
+      ${kpiRowsSvg}
+      <line x1="724" y1="535" x2="1178" y2="535" stroke="#e5e7eb"/>
+      <text x="724" y="568" class="dark" font-size="17" font-weight="900">확인 필요</text>
+      <text x="850" y="568" class="muted" font-size="16" font-weight="800">원본DB 미매칭 ${stats.unmatchedRows.length}건 · 근로손실일수 공란 ${stats.approvedRows.filter(r => !Number(r.lostDays || 0)).length}건</text>
+    </g>
+
+    <g>
+      <rect x="54" y="616" width="1166" height="72" rx="18" fill="#fff7f7" stroke="#ffc7c7"/>
+      <text x="84" y="657" class="red" font-size="22" font-weight="900">핵심 포인트</text>
+      <text x="226" y="657" class="dark" font-size="17" font-weight="900">이번 달 KPI 반영 대상은 <tspan class="red">${stats.kpiRows.length}건</tspan>이며, 최다 KPI 분류는 <tspan class="red">${svgEsc(topKpi.label)}</tspan>입니다. 출퇴근 재해 ${stats.commuteRows.length}건은 KPI 집계에서 제외했습니다.</text>
+    </g>
+  </g>
+</svg>`;
 }
 
 async function getLogoDataUrl() {
@@ -2239,7 +2688,9 @@ function closeCaptureMode() {
   const body = $('captureBody');
   if (body) body.className = 'capture-body-grid';
   state.currentSummarySvg = null;
+  state.currentSummarySvgs = [];
   state.currentSummaryFileName = null;
+  state.currentSummaryZipName = null;
   
   ['type', 'dept'].forEach(k => {
     if (state.captureCharts[k]) {
@@ -2253,7 +2704,7 @@ async function downloadCaptureImage() {
   const multiPages = state.currentSummarySvgs || [];
 
   if (multiPages.length > 1) {
-    showLoading('3장 요약 이미지를 ZIP으로 만드는 중입니다...');
+    showLoading(`${multiPages.length}장 요약 이미지를 ZIP으로 만드는 중입니다...`);
     try {
       if (typeof JSZip === 'undefined') {
         for (const page of multiPages) {
@@ -2268,7 +2719,7 @@ async function downloadCaptureImage() {
           zip.file(page.fileName, blob);
         }
         const zipBlob = await zip.generateAsync({ type: 'blob' });
-        downloadBlob(zipBlob, state.currentSummaryZipName || '산업재해_현황_요약_3장.zip');
+        downloadBlob(zipBlob, state.currentSummaryZipName || '산업재해_현황_요약.zip');
       }
     } catch (err) {
       alert('이미지 다운로드 중 오류 발생: ' + (err.message || err));
