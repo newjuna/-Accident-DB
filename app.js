@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwJSQrJCWE0v2tRTb4GIJQ_rA0SF868quwW9AEEQgs-VDN-b0DlAKRSkPbLe0XzJuf0eQ/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
