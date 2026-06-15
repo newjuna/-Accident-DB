@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwD29oMY0CP2ujRYorzd6U50xAJb4fWmEDw9oQR40cQEAgLWcegxfNeUHlpqpulscCwZg/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -2794,32 +2794,32 @@ function buildApprovalSummarySvgReport(ctx) {
     return { ...r, x, h, y, color: i === 2 ? '#ff1a1a' : '#0b2f86' };
   });
 
-  const typeRowsSvg = (stats.typeCounts.length ? stats.typeCounts : [{ label: '데이터 없음', count: 0 }]).slice(0, 5).map((r, i) => {
-    const y = 342 + i * 31;
-    const width = Math.max(6, Math.round((Number(r.count || 0) / maxType) * 230));
+  const typeRowsSvg = (stats.typeCounts.length ? stats.typeCounts : [{ label: '데이터 없음', count: 0 }]).slice(0, 4).map((r, i) => {
+    const y = 334 + i * 27;
+    const width = Math.max(6, Math.round((Number(r.count || 0) / maxType) * 315));
     const color = i === 0 ? '#0b2f86' : (i === 1 ? '#ff1a1a' : (i === 2 ? '#f28c28' : '#8a8f98'));
     return `
-      <text x="690" y="${y}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 10))}</text>
-      <rect x="810" y="${y-12}" width="230" height="12" rx="6" fill="#edf0f5"/>
-      <rect x="810" y="${y-12}" width="${width}" height="12" rx="6" fill="${color}"/>
-      <text x="1070" y="${y}" text-anchor="end" class="dark" font-size="15" font-weight="900">${Number(r.count||0).toLocaleString()}건</text>`;
+      <text x="690" y="${y}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 11))}</text>
+      <rect x="825" y="${y-12}" width="315" height="12" rx="6" fill="#edf0f5"/>
+      <rect x="825" y="${y-12}" width="${width}" height="12" rx="6" fill="${color}"/>
+      <text x="1182" y="${y}" text-anchor="end" class="dark" font-size="15" font-weight="900">${Number(r.count||0).toLocaleString()}건</text>`;
   }).join('');
 
-  const lossRowsSvg = (stats.lossByDept.length ? stats.lossByDept : [{ label: '데이터 없음', count: 0 }]).slice(0, 5).map((r, i) => {
-    const y = 472 + i * 28;
-    const width = Math.max(6, Math.round((Number(r.count || 0) / maxLoss) * 230));
+  const lossRowsSvg = (stats.lossByDept.length ? stats.lossByDept : [{ label: '데이터 없음', count: 0 }]).slice(0, 4).map((r, i) => {
+    const y = 489 + i * 24;
+    const width = Math.max(6, Math.round((Number(r.count || 0) / maxLoss) * 170));
     return `
-      <text x="690" y="${y}" class="dark" font-size="14" font-weight="900">${svgEsc(shortSvgText(r.label, 10))}</text>
-      <rect x="810" y="${y-11}" width="230" height="11" rx="6" fill="#edf0f5"/>
-      <rect x="810" y="${y-11}" width="${width}" height="11" rx="6" fill="#ff1a1a"/>
-      <text x="1070" y="${y}" text-anchor="end" class="dark" font-size="14" font-weight="900">${Number(r.count||0).toLocaleString()}일</text>`;
+      <text x="690" y="${y}" class="dark" font-size="13" font-weight="900">${svgEsc(shortSvgText(r.label, 8))}</text>
+      <rect x="780" y="${y-10}" width="170" height="10" rx="5" fill="#edf0f5"/>
+      <rect x="780" y="${y-10}" width="${width}" height="10" rx="5" fill="#ff1a1a"/>
+      <text x="970" y="${y}" text-anchor="end" class="dark" font-size="13" font-weight="900">${Number(r.count||0).toLocaleString()}일</text>`;
   }).join('');
 
-  const severeTop = stats.severeStores.slice(0, 3).map((r, i) => {
-    const y = 472 + i * 28;
+  const severeTop = stats.severeStores.slice(0, 4).map((r, i) => {
+    const y = 489 + i * 24;
     return `
-      <text x="1096" y="${y}" class="dark" font-size="13" font-weight="900">${i+1}. ${svgEsc(shortSvgText(r.store, 8))}</text>
-      <text x="1220" y="${y}" text-anchor="end" class="red" font-size="13" font-weight="900">${Number(r.maxLostDays||0).toLocaleString()}일</text>`;
+      <text x="1010" y="${y}" class="dark" font-size="13" font-weight="900">${i+1}. ${svgEsc(shortSvgText(r.store, 9))}</text>
+      <text x="1182" y="${y}" text-anchor="end" class="red" font-size="13" font-weight="900">${Number(r.maxLostDays||0).toLocaleString()}일</text>`;
   }).join('');
 
   return `
@@ -2871,13 +2871,18 @@ function buildApprovalSummarySvgReport(ctx) {
     </g>
 
     <g>
-      <rect x="654" y="276" width="570" height="304" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="690" y="318" class="panel-title navy">재해유형별 건수</text>
+      <rect x="654" y="276" width="570" height="146" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="690" y="312" class="panel-title navy">재해유형별 건수</text>
       ${typeRowsSvg}
-      <line x1="690" y1="420" x2="1190" y2="420" stroke="#e5e7eb"/>
-      <text x="690" y="448" class="panel-title navy">영업부별 근로손실일수</text>
+    </g>
+
+    <g>
+      <rect x="654" y="436" width="570" height="144" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="690" y="466" class="panel-title navy">영업부별 근로손실일수</text>
       ${lossRowsSvg}
-      ${severeTop ? `<text x="1096" y="448" class="panel-title red" font-size="17" font-weight="900">91일 이상 TOP</text>${severeTop}` : ''}
+      <line x1="990" y1="458" x2="990" y2="558" stroke="#e5e7eb"/>
+      <text x="1010" y="466" class="panel-title red" font-size="18" font-weight="900">91일 이상 재해 TOP</text>
+      ${severeTop}
     </g>
 
     <g>
