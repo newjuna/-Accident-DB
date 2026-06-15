@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwJSQrJCWE0v2tRTb4GIJQ_rA0SF868quwW9AEEQgs-VDN-b0DlAKRSkPbLe0XzJuf0eQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -1899,7 +1899,7 @@ function renderApprovalKpis() {
       <small></small>
     </article>
     <article class="approval-kpi-card approval-kpi-target">
-      <span>KPI 집계대상</span>
+      <span>3대 재해</span>
       <strong>${stats.kpiRows.length}건</strong>
       <small>넘어짐·무리한 동작·물체에 맞음</small>
     </article>
@@ -1969,8 +1969,7 @@ function renderApprovalCharts() {
   grid.innerHTML = `
     ${makeApprovalDonutPanel('재해유형 TOP 5', stats.typeCounts)}
     ${makeApprovalDeptTeamPanel(stats.deptCounts, stats.teamCounts)}
-    ${makeApprovalBarPanel('영업부별 근로손실일수', stats.lossByDept, 'red', '일')}
-    ${makeSevereStorePanel(stats.severeStores.slice(0, 5))}
+    ${makeApprovalLossSeverePanel(stats.lossByDept, stats.severeStores.slice(0, 5))}
   `;
 }
 
@@ -1978,7 +1977,7 @@ function renderApprovalCharts() {
 function makeApprovalDonutPanel(title, rows) {
   const safeRows = (rows || []).slice(0, 5);
   const total = safeRows.reduce((s, r) => s + Number(r.count || 0), 0);
-  const colors = ['#0b2f86', '#ff1a1a', '#9aa0a6', '#d6d9de', '#f0b429'];
+  const colors = ['#0b2f86', '#ff1a1a', '#f28c28', '#9aa0a6', '#f0b429'];
   let current = 0;
   const stops = safeRows.map((r, i) => {
     const value = total ? (Number(r.count || 0) / total) * 100 : 0;
@@ -1987,6 +1986,11 @@ function makeApprovalDonutPanel(title, rows) {
     return `${colors[i % colors.length]} ${start.toFixed(2)}% ${current.toFixed(2)}%`;
   }).join(', ');
   const donutStyle = total ? `background: conic-gradient(${stops});` : 'background:#edf0f5;';
+  const tooltipRows = safeRows.map((r, i) => {
+    const pct = total ? Math.round((Number(r.count || 0) / total) * 100) : 0;
+    return `<div><span style="background:${colors[i % colors.length]}"></span><strong>${esc(r.label || '-')}</strong><b>${Number(r.count || 0).toLocaleString()}건 · ${pct}%</b></div>`;
+  }).join('');
+  const tooltip = safeRows.length ? `<div class="approval-donut-tooltip">${tooltipRows}</div>` : '';
   const legend = safeRows.length ? safeRows.map((r, i) => `
     <div class="approval-donut-legend-row">
       <span style="background:${colors[i % colors.length]}"></span>
@@ -1997,7 +2001,10 @@ function makeApprovalDonutPanel(title, rows) {
   return `<section class="approval-chart-card approval-donut-card">
     <h3>${esc(title)}</h3>
     <div class="approval-donut-layout">
-      <div class="approval-donut" style="${donutStyle}"><em>${total.toLocaleString()}건</em></div>
+      <div class="approval-donut-wrap">
+        <div class="approval-donut" style="${donutStyle}" title="${esc(safeRows.map(r => `${r.label}: ${r.count}건`).join(' / '))}"><em>${total.toLocaleString()}건</em></div>
+        ${tooltip}
+      </div>
       <div class="approval-donut-legend">${legend}</div>
     </div>
   </section>`;
@@ -2040,6 +2047,48 @@ function makeApprovalDeptTeamPanel(deptRows, teamRows) {
     <div class="approval-combo-grid">
       ${makeCol('영업부별', deptRows)}
       ${makeCol('팀별', teamRows)}
+    </div>
+  </section>`;
+}
+
+
+function makeApprovalLossSeverePanel(lossRows, severeRows) {
+  const makeLossCol = (rows) => {
+    const max = Math.max(1, ...(rows || []).slice(0, 5).map(r => Number(r.count || 0)));
+    return (rows && rows.length) ? rows.slice(0, 5).map((r, i) => {
+      const w = Math.max(6, Math.round((Number(r.count || 0) / max) * 100));
+      return `<div class="approval-loss-row">
+        <span>${i + 1}</span>
+        <strong>${esc(r.label || '-')}</strong>
+        <div class="loss-track"><div style="width:${w}%"></div></div>
+        <b>${Number(r.count || 0).toLocaleString()}일</b>
+      </div>`;
+    }).join('') : '<div class="empty-message compact">데이터가 없습니다.</div>';
+  };
+
+  const makeSevereCol = (rows) => {
+    return (rows && rows.length) ? rows.slice(0, 5).map((r, i) => `
+      <div class="approval-severe-mini-row ${r.count >= 2 ? 'risk' : ''}" onclick="openDetail('${escapeAttr(r.firstRecordId || '')}')">
+        <span>${i + 1}</span>
+        <div>
+          <strong>${esc(r.store || '-')}</strong>
+          <small>${esc(r.latestDate || '-')} · ${esc(cleanDeptName(r.dept || '-'))}</small>
+        </div>
+        <b>${Number(r.maxLostDays || 0).toLocaleString()}일</b>
+      </div>`).join('') : '<div class="empty-message compact">91일 이상 재해 매장이 없습니다.</div>';
+  };
+
+  return `<section class="approval-chart-card approval-loss-severe-card">
+    <h3>근로손실일수·91일 이상 재해 TOP 5</h3>
+    <div class="approval-loss-severe-grid">
+      <div class="approval-combo-col loss-col">
+        <h4>영업부별 근로손실일수</h4>
+        ${makeLossCol(lossRows)}
+      </div>
+      <div class="approval-combo-col severe-col">
+        <h4>91일 이상 재해 매장</h4>
+        ${makeSevereCol(severeRows)}
+      </div>
     </div>
   </section>`;
 }
