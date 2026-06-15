@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbzfpzqZSEibedZtr9M1yLKTYcgDQgzpxJq9L3ZRMS7YHwlN9YZ2t-5yZSPYPLt19uiMpQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -58,6 +58,9 @@ const state = {
   approvalRows: [],
   approvalTrendRows: [],
   approvalDataLoaded: false,
+  approvalQueryCache: {},
+  approvalTrendCache: {},
+  approvalSevereCardPage: 1,
   approvalPage: 1,
   approvalSevereRows: [],
   severePage: 1,
@@ -1710,6 +1713,34 @@ function getApprovalMonthOptions() {
   return ['전체', '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
 }
 
+function getApprovalQueryCacheKey(filters) {
+  const f = filters || {};
+  return [String(f.year || '전체'), String(f.month || '전체'), String(f.storeSearch || '')].join('|');
+}
+
+function getApprovalRowsFromCache(filters) {
+  return state.approvalQueryCache[getApprovalQueryCacheKey(filters)] || null;
+}
+
+function setApprovalRowsCache(filters, rows) {
+  state.approvalQueryCache[getApprovalQueryCacheKey(filters)] = rows || [];
+}
+
+function getApprovalTrendCacheKey(filters) {
+  const f = filters || {};
+  return ['trend', String(f.month || '전체'), String(f.storeSearch || '')].join('|');
+}
+
+function getApprovalTrendRowsFromCache(filters) {
+  return state.approvalTrendCache[getApprovalTrendCacheKey(filters)] || null;
+}
+
+function setApprovalTrendRowsCache(filters, rows) {
+  state.approvalTrendCache[getApprovalTrendCacheKey(filters)] = rows || [];
+}
+
+
+
 function isApprovedRow(r) {
   return String((r || {}).approvalYn || '').trim().toUpperCase() === 'Y';
 }
@@ -1861,20 +1892,33 @@ async function loadApprovalDashboardData(options = {}) {
   if (!isSafetyTeamLogin()) return;
   const f = state.approvalFilters;
   if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
-  if (!options.skipQuery) showLoading(options.loadingMessage || '산재 승인 사고 대시보드를 조회 중입니다');
+
+  const currentFilters = { year: f.year || '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+  const trendFilters = { year: '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+  const cachedRows = getApprovalRowsFromCache(currentFilters);
+  const cachedTrend = getApprovalTrendRowsFromCache(trendFilters);
+  const canUseCache = !!cachedRows && !!cachedTrend;
+
+  if (!options.skipQuery && !canUseCache) showLoading(options.loadingMessage || '산재 승인 사고 대시보드를 조회 중입니다');
+
   try {
-    if (!options.skipQuery) {
-      const currentFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
-      const trendFilters = { year: '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+    if (options.skipQuery || canUseCache) {
+      if (cachedRows) state.approvalBaseRows = cachedRows;
+      if (cachedTrend) state.approvalTrendRows = cachedTrend;
+    } else {
       const [currentRes, trendRes] = await Promise.all([
         callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(currentFilters) }),
         callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(trendFilters) })
       ]);
       state.approvalBaseRows = currentRes.rows || [];
       state.approvalTrendRows = trendRes.rows || [];
+      setApprovalRowsCache(currentFilters, state.approvalBaseRows);
+      setApprovalTrendRowsCache(trendFilters, state.approvalTrendRows);
       state.approvalDataLoaded = true;
     }
+
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
+    state.approvalSevereCardPage = 1;
     renderApprovalDashboardFilters();
     renderApprovalKpis();
     renderApprovalTrendChart();
@@ -1882,7 +1926,7 @@ async function loadApprovalDashboardData(options = {}) {
   } catch (err) {
     alert('산재 승인 사고 대시보드 오류: ' + (err.message || err));
   } finally {
-    if (!options.skipQuery) hideLoading();
+    if (!options.skipQuery && !canUseCache) hideLoading();
   }
 }
 
@@ -1969,7 +2013,7 @@ function renderApprovalCharts() {
   grid.innerHTML = `
     ${makeApprovalDonutPanel('재해유형 TOP 5', stats.typeCounts)}
     ${makeApprovalDeptTeamPanel(stats.deptCounts, stats.teamCounts)}
-    ${makeApprovalLossSeverePanel(stats.lossByDept, stats.severeStores.slice(0, 5))}
+    ${makeApprovalLossSeverePanel(stats.lossByDept, stats.severeStores)}
   `;
 }
 
@@ -2066,10 +2110,18 @@ function makeApprovalLossSeverePanel(lossRows, severeRows) {
     }).join('') : '<div class="empty-message compact">데이터가 없습니다.</div>';
   };
 
-  const makeSevereCol = (rows) => {
-    return (rows && rows.length) ? rows.slice(0, 5).map((r, i) => `
+  const pageSize = 5;
+  const rows = severeRows || [];
+  const maxPage = Math.max(1, Math.ceil(rows.length / pageSize));
+  if (state.approvalSevereCardPage > maxPage) state.approvalSevereCardPage = maxPage;
+  if (state.approvalSevereCardPage < 1) state.approvalSevereCardPage = 1;
+  const start = (state.approvalSevereCardPage - 1) * pageSize;
+  const pageRows = rows.slice(start, start + pageSize);
+
+  const makeSevereCol = (pageRows) => {
+    return (pageRows && pageRows.length) ? pageRows.map((r, i) => `
       <div class="approval-severe-mini-row ${r.count >= 2 ? 'risk' : ''}" onclick="openDetail('${escapeAttr(r.firstRecordId || '')}')">
-        <span>${i + 1}</span>
+        <span>${start + i + 1}</span>
         <div>
           <strong>${esc(r.store || '-')}</strong>
           <small>${esc(r.latestDate || '-')} · ${esc(cleanDeptName(r.dept || '-'))}</small>
@@ -2077,6 +2129,13 @@ function makeApprovalLossSeverePanel(lossRows, severeRows) {
         <b>${Number(r.maxLostDays || 0).toLocaleString()}일</b>
       </div>`).join('') : '<div class="empty-message compact">91일 이상 재해 매장이 없습니다.</div>';
   };
+
+  const pager = rows.length > pageSize ? `
+    <div class="approval-severe-card-pager">
+      <button type="button" onclick="changeApprovalSevereCardPage(-1)" ${state.approvalSevereCardPage <= 1 ? 'disabled' : ''}>‹</button>
+      <span>${state.approvalSevereCardPage} / ${maxPage}</span>
+      <button type="button" onclick="changeApprovalSevereCardPage(1)" ${state.approvalSevereCardPage >= maxPage ? 'disabled' : ''}>›</button>
+    </div>` : '';
 
   return `<section class="approval-chart-card approval-loss-severe-card">
     <h3>근로손실일수·91일 이상 재해 TOP 5</h3>
@@ -2086,12 +2145,21 @@ function makeApprovalLossSeverePanel(lossRows, severeRows) {
         ${makeLossCol(lossRows)}
       </div>
       <div class="approval-combo-col severe-col">
-        <h4>91일 이상 재해 매장</h4>
-        ${makeSevereCol(severeRows)}
+        <div class="approval-severe-col-head">
+          <h4>91일 이상 재해 매장</h4>
+          ${pager}
+        </div>
+        ${makeSevereCol(pageRows)}
       </div>
     </div>
   </section>`;
 }
+
+function changeApprovalSevereCardPage(delta) {
+  state.approvalSevereCardPage += Number(delta || 0);
+  renderApprovalCharts();
+}
+window.changeApprovalSevereCardPage = changeApprovalSevereCardPage;
 
 function makeApprovalBarPanel(title, rows, tone = 'blue', unit = '건') {
   const max = Math.max(1, ...(rows || []).map(r => Number(r.count || 0)));
@@ -2165,12 +2233,22 @@ async function loadApprovalData(options = {}) {
   if (!isSafetyTeamLogin()) return;
   const f = state.approvalFilters;
   if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
-  showLoading(options.loadingMessage || '산재 승인 사고 데이터를 조회 중입니다');
+
+  const queryFilters = { year: f.year || '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+  const cachedRows = getApprovalRowsFromCache(queryFilters);
+
+  if (!cachedRows) showLoading(options.loadingMessage || '산재 승인 사고 데이터를 조회 중입니다');
+
   try {
-    const queryFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
-    const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
-    state.approvalBaseRows = res.rows || [];
-    state.approvalDataLoaded = true;
+    if (cachedRows) {
+      state.approvalBaseRows = cachedRows;
+    } else {
+      const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
+      state.approvalBaseRows = res.rows || [];
+      setApprovalRowsCache(queryFilters, state.approvalBaseRows);
+      state.approvalDataLoaded = true;
+    }
+
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalPage = 1;
     renderApprovalFilters();
@@ -2178,7 +2256,7 @@ async function loadApprovalData(options = {}) {
   } catch (err) {
     alert('산재 승인 사고 데이터 조회 오류: ' + (err.message || err));
   } finally {
-    hideLoading();
+    if (!cachedRows) hideLoading();
   }
 }
 
@@ -2216,11 +2294,41 @@ function downloadApprovalExcel() {
   const title = fileName.replace(/\.xlsx$/i, '');
   const header = ['No', '재해일자', '영업부', '팀', '매장명', '재해유형', '산재승인 유무', '근로손실일수', 'KPI집계현황분류', '사고내용'];
   const dataRows = rows.map((r, i) => ([i + 1, r.accidentDate || '', cleanDeptName(r.stdDept || ''), r.stdTeam || '', r.store || '', r.accidentType || '', r.approvalYn || '', r.lostDays || '', r.kpiCategory || '', r.accidentContent || '']));
-  makeStyledExcel_(title, header, dataRows, fileName, '산재승인KPI');
+  makeStyledExcel_(title, header, dataRows, fileName, '산재승인KPI', {
+    afterBodyRowStyle: ({ ws, excelRow, dataIndex, bodyCenterStyle }) => {
+      const rowData = rows[dataIndex] || {};
+      const lostDays = Number(rowData.lostDays || 0);
+      const kpiValue = String(rowData.kpiCategory || '').trim();
+
+      if (lostDays >= 91) {
+        const hAddr = XLSX.utils.encode_cell({ r: excelRow - 1, c: 7 });
+        if (ws[hAddr]) {
+          ws[hAddr].s = {
+            ...bodyCenterStyle,
+            font: { name: '맑은 고딕', bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
+            fill: { patternType: 'solid', fgColor: { rgb: '000000' } },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+          };
+        }
+      }
+
+      if (kpiValue && kpiValue !== 'KPI 제외' && !kpiValue.includes('제외') && !kpiValue.includes('미매칭')) {
+        const iAddr = XLSX.utils.encode_cell({ r: excelRow - 1, c: 8 });
+        if (ws[iAddr]) {
+          ws[iAddr].s = {
+            ...bodyCenterStyle,
+            font: { name: '맑은 고딕', bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
+            fill: { patternType: 'solid', fgColor: { rgb: '00B050' } },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+          };
+        }
+      }
+    }
+  });
 }
 window.downloadApprovalExcel = downloadApprovalExcel;
 
-function makeStyledExcel_(title, header, dataRows, fileName, sheetBaseName) {
+function makeStyledExcel_(title, header, dataRows, fileName, sheetBaseName, options = {}) {
   const aoa = [[title], [], [], header, ...dataRows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const lastRow = aoa.length;
@@ -2240,6 +2348,16 @@ function makeStyledExcel_(title, header, dataRows, fileName, sheetBaseName) {
     for (let c = 1; c <= lastCol; c++) {
       const addr = XLSX.utils.encode_cell({ r: r - 1, c: c - 1 });
       applyExcelCellStyle(ws, addr, r === tableStartRow ? headerStyle : ([1, 2, 3, 4, 6, 7, 8, 9].includes(c) ? bodyCenterStyle : bodyStyle));
+    }
+
+    if (r > tableStartRow && typeof options.afterBodyRowStyle === 'function') {
+      options.afterBodyRowStyle({
+        ws,
+        excelRow: r,
+        dataIndex: r - tableStartRow - 1,
+        bodyCenterStyle,
+        bodyStyle
+      });
     }
   }
   ws['!freeze'] = { xSplit: 0, ySplit: 4 };
@@ -2292,12 +2410,22 @@ async function loadSevereStoreData(options = {}) {
   if (!isSafetyTeamLogin()) return;
   const f = state.approvalFilters;
   if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
-  showLoading(options.loadingMessage || '중상해 매장 데이터를 조회 중입니다');
+
+  const queryFilters = { year: f.year || '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
+  const cachedRows = getApprovalRowsFromCache(queryFilters);
+
+  if (!cachedRows) showLoading(options.loadingMessage || '중상해 매장 데이터를 조회 중입니다');
+
   try {
-    const queryFilters = { year: f.year, month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
-    const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
-    state.approvalBaseRows = res.rows || [];
-    state.approvalDataLoaded = true;
+    if (cachedRows) {
+      state.approvalBaseRows = cachedRows;
+    } else {
+      const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
+      state.approvalBaseRows = res.rows || [];
+      setApprovalRowsCache(queryFilters, state.approvalBaseRows);
+      state.approvalDataLoaded = true;
+    }
+
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalSevereRows = getSevereStoreGroups(state.approvalRows);
     state.severePage = 1;
@@ -2307,7 +2435,7 @@ async function loadSevereStoreData(options = {}) {
   } catch (err) {
     alert('중상해 매장 조회 오류: ' + (err.message || err));
   } finally {
-    hideLoading();
+    if (!cachedRows) hideLoading();
   }
 }
 

@@ -4397,3 +4397,48 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ============ v20 산재승인 엑셀/중상해 페이지 보정 ============ */
+.approval-severe-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.approval-severe-col-head h4 {
+  margin: 0;
+}
+.approval-severe-card-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 1px solid rgba(0,43,109,.12);
+  border-radius: 999px;
+  padding: 4px 6px;
+}
+.approval-severe-card-pager button {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--navy);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 1000;
+  line-height: 1;
+  cursor: pointer;
+}
+.approval-severe-card-pager button:disabled {
+  background: #c7ccd4;
+  cursor: default;
+}
+.approval-severe-card-pager span {
+  min-width: 34px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 1000;
+  color: #344054;
+}
