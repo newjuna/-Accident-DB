@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwTZUcpAjmVcjlLSY3euJN5Ko8N0NquvUz0gbUaymlcF1BB31wfTem61J3nnVbMJOFZDg/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -3411,6 +3411,7 @@ function buildApprovalSummaryStats(rows, selectedYear) {
 
 
 
+
 function buildApprovalSummarySvgReport(ctx) {
   const stats = ctx.summaryStats || buildApprovalSummaryStats(ctx.rows || [], ctx.year);
   const approvedCount = Number(stats.approvedCount ?? ((stats.visibleRows || []).length || 0));
@@ -3433,15 +3434,16 @@ function buildApprovalSummarySvgReport(ctx) {
   const card2X = card1X + cardW + chartGap;
   const card3X = card2X + cardW + chartGap;
 
-  const barBaseY = 518;
-  const barMaxH = 128;
-  const barWidth = 68;
-  const barStep = 108;
-  const barStartX = card1X + 62;
+  // 1) 3개년 비교 그래프: 막대 높이/크기 축소
+  const barBaseY = 520;
+  const barMaxH = 106;
+  const barWidth = 62;
+  const barStep = 110;
+  const barStartX = card1X + 58;
   const yearColors = ['#b8bec8', '#0b2f86', '#ff1a1a'];
   const yearBars = yearCounts.map((r, i) => {
     const value = Number(r.count || 0);
-    const h = Math.max(14, Math.round((value / maxYear) * barMaxH));
+    const h = Math.max(12, Math.round((value / maxYear) * barMaxH));
     const y = barBaseY - h;
     const x = barStartX + i * barStep;
     return { ...r, x, h, y, value, color: yearColors[i] || '#0b2f86' };
@@ -3471,8 +3473,9 @@ function buildApprovalSummarySvgReport(ctx) {
     ].join(' ');
   }
 
+  // 2) 도넛: 조금 더 아래로, 조금 더 작게, 범례 글자/건수 축소
   let currentAngle = 0;
-  const donutCx = card2X + 102, donutCy = 430, donutOuter = 74, donutInner = 42;
+  const donutCx = card2X + 102, donutCy = 446, donutOuter = 66, donutInner = 38;
   const donutSvg = typeTotal > 0 ? typeRows.map((r, i) => {
     const value = Number(r.count || 0);
     const sweep = (value / typeTotal) * 360;
@@ -3480,20 +3483,21 @@ function buildApprovalSummarySvgReport(ctx) {
     const end = currentAngle + sweep;
     currentAngle = end;
     return `<path d="${donutSlicePath(donutCx, donutCy, donutOuter, donutInner, start, end)}" fill="${donutColors[i] || '#8a8f98'}" stroke="#fff" stroke-width="2"/>`;
-  }).join('') : `<circle cx="${donutCx}" cy="${donutCy}" r="${donutOuter}" fill="none" stroke="#e5e7eb" stroke-width="32"/>`;
+  }).join('') : `<circle cx="${donutCx}" cy="${donutCy}" r="${donutOuter}" fill="none" stroke="#e5e7eb" stroke-width="28"/>`;
 
   const donutLegendSvg = typeRows.map((r, i) => {
-    const y = 392 + i * 58;
+    const y = 404 + i * 56;
     return `
-      <circle cx="${card2X + 232}" cy="${y}" r="7" fill="${donutColors[i] || '#8a8f98'}"/>
-      <text x="${card2X + 248}" y="${y + 5}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 8))}</text>
-      <text x="${card2X + 338}" y="${y + 5}" text-anchor="end" class="dark" font-size="15" font-weight="900">${Number(r.count || 0).toLocaleString()}건</text>`;
+      <circle cx="${card2X + 226}" cy="${y}" r="7" fill="${donutColors[i] || '#8a8f98'}"/>
+      <text x="${card2X + 242}" y="${y + 5}" class="dark" font-size="13" font-weight="900">${svgEsc(shortSvgText(r.label, 9))}</text>
+      <text x="${card2X + 334}" y="${y + 5}" text-anchor="end" class="dark" font-size="13" font-weight="900">${Number(r.count || 0).toLocaleString()}건</text>`;
   }).join('');
 
-  const lossBarX = card3X + 146;
-  const lossBarW = 138;
+  // 3) 영업부별 근로손실일수: 부서명과 그래프 간격 축소, 그래프 왼쪽으로 이동
+  const lossBarX = card3X + 118;
+  const lossBarW = 146;
   const lossRowsSvg = lossRows.map((r, i) => {
-    const y = 392 + i * 58;
+    const y = 402 + i * 56;
     const width = Math.max(10, Math.round((Number(r.count || 0) / maxLoss) * lossBarW));
     return `
       <text x="${card3X + 28}" y="${y + 5}" class="dark" font-size="16" font-weight="900">${svgEsc(shortSvgText(r.label, 8))}</text>
@@ -3554,9 +3558,9 @@ function buildApprovalSummarySvgReport(ctx) {
       <text x="${card1X + 26}" y="${chartY + 69}" class="muted" font-size="13" font-weight="900">(각 연도 ${svgEsc(monthNum ? `${monthNum}월 기준 비교` : '연간 누적 기준 비교')})</text>
       <line x1="${card1X + 44}" y1="${barBaseY}" x2="${card1X + cardW - 40}" y2="${barBaseY}" stroke="#e5e7eb" stroke-width="2"/>
       ${yearBars.map(p => `
-        <text x="${p.x + 34}" y="${p.y - 14}" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.value}건</text>
+        <text x="${p.x + 31}" y="${p.y - 12}" text-anchor="middle" class="dark" font-size="17" font-weight="900">${p.value}건</text>
         <rect x="${p.x}" y="${p.y}" width="${barWidth}" height="${p.h}" rx="16" fill="${p.color}" opacity="1"/>
-        <text x="${p.x + 34}" y="${chartY + 254}" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.year}</text>
+        <text x="${p.x + 31}" y="${chartY + 254}" text-anchor="middle" class="dark" font-size="17" font-weight="900">${p.year}</text>
       `).join('')}
     </g>
 
@@ -3565,8 +3569,8 @@ function buildApprovalSummarySvgReport(ctx) {
       <text x="${card2X + 26}" y="${chartY + 42}" class="panel-title navy">재해유형별 건수</text>
       ${donutSvg}
       <circle cx="${donutCx}" cy="${donutCy}" r="${donutInner - 2}" fill="#fff"/>
-      <text x="${donutCx}" y="${donutCy - 4}" text-anchor="middle" class="dark" font-size="16" font-weight="900">주요</text>
-      <text x="${donutCx}" y="${donutCy + 18}" text-anchor="middle" class="dark" font-size="16" font-weight="900">유형</text>
+      <text x="${donutCx}" y="${donutCy - 4}" text-anchor="middle" class="dark" font-size="15" font-weight="900">주요</text>
+      <text x="${donutCx}" y="${donutCy + 16}" text-anchor="middle" class="dark" font-size="15" font-weight="900">유형</text>
       ${donutLegendSvg}
     </g>
 
