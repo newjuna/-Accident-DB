@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbxr_9_skHf-54K-xni__gVj0shKKzG35ufv7EE1AZZF_zAlkVYipOjaHIBIVMJW3cdP/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -88,7 +88,12 @@ const state = {
 
   // v30 전체 로딩 최적화용: 같은 조건 재조회/상세조회 재호출 방지
   apiCache: {},
-  apiInflight: {}
+  apiInflight: {},
+
+  // v31 로그인 1회 로딩 캐시: 로그인 후 받은 전체 조회용 데이터를 브라우저에서 재사용
+  accidentAllRows: [],
+  approvalAllRows: [],
+  preloadMode: ''
 };
 
 const PAGE_SIZE_MODAL = 5;
@@ -450,7 +455,17 @@ async function initAfterLogin() {
     const dashboardData = startup.dashboard || {};
 
     state.initFilterData = init; // 데이터 조회 필터링을 위한 원본 백업
+    state.accidentAllRows = Array.isArray(startup.rows) ? startup.rows : [];
+    state.approvalAllRows = Array.isArray(startup.approvalRows) ? startup.approvalRows : [];
+    state.preloadMode = startup.preloadMode || '';
     state.lastDashboardData = dashboardData;
+
+    // v31: 안전보건팀 산재승인 영역은 로그인 때 받은 승인 사고 전체 데이터를 계속 재사용
+    if (state.approvalAllRows.length) {
+      state.approvalTrendRows = state.approvalAllRows;
+      state.approvalBaseRows = state.approvalAllRows;
+      state.approvalDataLoaded = true;
+    }
 
     const years = init.years && init.years.length ? init.years : ['전체', String(new Date().getFullYear())];
     const months = ['전체', '1월', '2월', '3월', '4월', '5월', '6월',
@@ -474,7 +489,11 @@ async function initAfterLogin() {
     state.approvalFilters.month = '전체';
 
     // 대시보드 즉시 그리기
-    renderDashboard(dashboardData || {});
+    const firstDashboard = hasLoginPreloadRows()
+      ? buildDashboardDataFromRowsV31_(getLocalAccidentRowsForDivisionV31_(state.division), state.year, state.month)
+      : (dashboardData || {});
+    state.lastDashboardData = firstDashboard;
+    renderDashboard(firstDashboard || {});
   } catch (err) {
     alert('초기화 에러: ' + (err.message || err));
   } finally {
@@ -482,10 +501,202 @@ async function initAfterLogin() {
   }
 }
 
+/* ============ v31 로그인 1회 로딩 캐시 유틸 ============ */
+function hasLoginPreloadRows() {
+  return Array.isArray(state.accidentAllRows) && state.accidentAllRows.length > 0;
+}
+
+function hasApprovalPreloadRows() {
+  return Array.isArray(state.approvalAllRows) && state.approvalAllRows.length > 0;
+}
+
+function getYearNumberV31_(year) {
+  const text = String(year ?? '').trim();
+  if (!text || text === '전체') return null;
+  const m = text.match(/\d{4}/);
+  return m ? Number(m[0]) : null;
+}
+
+function getMonthNumberV31_(month) {
+  const text = String(month ?? '').trim();
+  if (!text || text === '전체') return null;
+  const m = text.match(/\d{1,2}/);
+  const n = m ? Number(m[0]) : null;
+  return n && n >= 1 && n <= 12 ? n : null;
+}
+
+function filterRowsByPeriodV31_(rows, year, month) {
+  const y = getYearNumberV31_(year);
+  const m = getMonthNumberV31_(month);
+  return (rows || []).filter(r => {
+    if (y && Number(r.year) !== y) return false;
+    if (m && Number(r.month) !== m) return false;
+    return true;
+  });
+}
+
+function isAccidentCommuteRowV31_(r) {
+  const t = String((r || {}).accidentType || '').replace(/\s/g, '');
+  return ['출퇴근', '출퇴근재해'].includes(t);
+}
+
+function parseDateV31_(value) {
+  if (!value) return null;
+  const s = String(value).trim();
+  let m = s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/);
+  if (!m) m = s.match(/(\d{4})(\d{2})(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function getPreviousPeriodV31_(year, month) {
+  let y = getYearNumberV31_(year);
+  let m = getMonthNumberV31_(month);
+  if (!y || !m) return null;
+  if (m === 1) return { year: String(y - 1), month: '12월' };
+  return { year: String(y), month: `${m - 1}월` };
+}
+
+function getYoyRowsV31_(rows, year, month) {
+  const y = getYearNumberV31_(year);
+  const m = getMonthNumberV31_(month);
+  if (!y) return [];
+  return filterRowsByPeriodV31_(rows, String(y - 1), m ? `${m}월` : '전체');
+}
+
+function makeCountRowsV31_(rows, field) {
+  const o = {};
+  (rows || []).forEach(r => {
+    const key = String(r[field] || '미분류').trim() || '미분류';
+    o[key] = (o[key] || 0) + 1;
+  });
+  return Object.keys(o).map(label => ({ label, count: o[label] })).sort((a, b) => b.count - a.count);
+}
+
+function topItemV31_(rows) {
+  return rows && rows.length ? { name: rows[0].label, count: rows[0].count } : null;
+}
+
+function getBaseDateV31_(rows, year, month) {
+  let y = getYearNumberV31_(year);
+  const m = getMonthNumberV31_(month);
+  if (m) {
+    if (!y) {
+      y = Math.max(...(rows || []).map(r => Number(r.year) || 0), new Date().getFullYear());
+    }
+    return new Date(y, m, 0);
+  }
+  const filtered = filterRowsByPeriodV31_(rows, year, '전체');
+  let latest = null;
+  filtered.forEach(r => {
+    const d = parseDateV31_(r.accidentDate);
+    if (d && (!latest || d > latest)) latest = d;
+  });
+  if (latest) return latest;
+  if (y) return new Date(y, 11, 31);
+  return new Date();
+}
+
+function buildRepeatStoresV31_(rows, year, month) {
+  const baseDate = getBaseDateV31_(rows, year, month);
+  if (!baseDate) return [];
+  const start = new Date(baseDate.getTime());
+  start.setFullYear(start.getFullYear() - 1);
+  start.setDate(start.getDate() + 1);
+  const target = (rows || []).filter(r => {
+    if (isAccidentCommuteRowV31_(r)) return false;
+    if (!r.store) return false;
+    const d = parseDateV31_(r.accidentDate);
+    return d && d >= start && d <= baseDate;
+  });
+  const groups = {};
+  target.forEach(r => {
+    const store = r.store || '미분류';
+    if (!groups[store]) groups[store] = [];
+    groups[store].push(r);
+  });
+  return Object.keys(groups).map(store => {
+    const g = groups[store];
+    if (g.length < 2) return null;
+    const top = topItemV31_(makeCountRowsV31_(g, 'accidentType'));
+    g.sort((a, b) => String(b.accidentDate || '').localeCompare(String(a.accidentDate || '')));
+    return {
+      store,
+      count: g.length,
+      topType: top ? top.name : '-',
+      recentDate: g[0].accidentDate || '-',
+      dept: g[0].stdDept || '-',
+      team: g[0].stdTeam || '-'
+    };
+  }).filter(Boolean).sort((a, b) => b.count - a.count || String(b.recentDate).localeCompare(String(a.recentDate)));
+}
+
+function buildYearlyMonthlyTrendV31_(rows, currentYear) {
+  let y = getYearNumberV31_(currentYear);
+  if (!y) {
+    y = Math.max(...(rows || []).map(r => Number(r.year) || 0), new Date().getFullYear());
+  }
+  return [y - 2, y - 1, y].map(yr => {
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      months.push((rows || []).filter(r => Number(r.year) === yr && Number(r.month) === m && !isAccidentCommuteRowV31_(r)).length);
+    }
+    return { year: String(yr), months, total: months.reduce((a, b) => a + Number(b || 0), 0) };
+  });
+}
+
+function getLocalAccidentRowsForDivisionV31_(division) {
+  const rows = state.accidentAllRows || [];
+  if (!division || division === state.division || division === '안전보건팀') return rows;
+  return rows.filter(r => String(r.division || '') === String(division));
+}
+
+function buildDashboardDataFromRowsV31_(sourceRows, year, month) {
+  const all = sourceRows || [];
+  const base = filterRowsByPeriodV31_(all, year, month).filter(r => !isAccidentCommuteRowV31_(r));
+  const yoyRows = getYoyRowsV31_(all, year, month).filter(r => !isAccidentCommuteRowV31_(r));
+  const typeCounts = makeCountRowsV31_(base, 'accidentType');
+  const deptCounts = makeCountRowsV31_(base, 'stdDept');
+  const teamCounts = makeCountRowsV31_(base, 'stdTeam');
+  const topType = topItemV31_(typeCounts);
+
+  return {
+    ok: true,
+    kpi: {
+      total: base.length,
+      yoyDiff: base.length - yoyRows.length,
+      yoyBase: yoyRows.length,
+      topType: topType ? topType.name : '-',
+      topTypeCount: topType ? topType.count : 0
+    },
+    charts: {
+      typeCounts,
+      typeCountsYoy: makeCountRowsV31_(yoyRows, 'accidentType'),
+      deptCounts,
+      deptCountsYoy: makeCountRowsV31_(yoyRows, 'stdDept'),
+      teamCounts,
+      teamCountsYoy: makeCountRowsV31_(yoyRows, 'stdTeam')
+    },
+    repeatStores: buildRepeatStoresV31_(all, year, month),
+    yearlyTrend: buildYearlyMonthlyTrendV31_(all, year),
+    hasData: base.length > 0
+  };
+}
+
 /* ============ 대시보드 불러오기 ============ */
 async function loadDashboard() {
   state.year = $('dashYear').value;
   state.month = $('dashMonth').value;
+
+  // v31: 로그인 때 받은 전체 데이터가 있으면 월/연도 변경은 브라우저 안에서 즉시 재계산한다.
+  if (hasLoginPreloadRows()) {
+    const data = buildDashboardDataFromRowsV31_(getLocalAccidentRowsForDivisionV31_(state.division), state.year, state.month);
+    state.lastDashboardData = data;
+    renderDashboard(data || {});
+    return;
+  }
+
   showLoading('대시보드를 불러오는 중입니다');
   try {
     const data = await callAPI({
@@ -756,20 +967,9 @@ function drawTrendChart(trendData) {
 
 /* ============ 수동 리스트 모달 쿼리 (로딩 오버레이 연동 확인) ============ */
 async function openChartList(chartType, label) {
-  showLoading('사고 리스트를 불러오는 중입니다'); 
-  try {
-    // 반복사고 매장 클릭('store')인 경우, 대시보드 선택 연월에 영향받지 않게 year/month를 '전체'로 쿼리
-    const yr = (chartType === 'store') ? '전체' : state.year;
-    const mth = (chartType === 'store') ? '전체' : state.month;
-
-    const res = await callAPI({
-      action: 'chartRecords', division: state.division,
-      chartType, label, year: yr, month: mth
-    });
-    state.listRows = (res && res.rows) || [];
+  const applyResult = (rows) => {
+    state.listRows = rows || [];
     state.listPage = 1;
-
-    // v14 기준 유지: 반복사고 매장(store)에서 열린 사고 리스트 팝업만 카드형으로 표시
     state.listModalMode = (chartType === 'store') ? 'repeatStoreCards' : 'table';
     $('listModalTitle').textContent = cleanDeptName(label || '') + ' 사고 리스트 (' + state.listRows.length + '건)';
 
@@ -781,6 +981,48 @@ async function openChartList(chartType, label) {
 
     renderListModalPage();
     $('listModal').classList.remove('hidden');
+  };
+
+  // v31: 차트/반복사고 클릭도 로그인 시 받은 데이터에서 즉시 목록 생성
+  if (hasLoginPreloadRows()) {
+    try {
+      const allRows = getLocalAccidentRowsForDivisionV31_(state.division);
+      let rows = [];
+
+      if (chartType === 'store') {
+        const baseDate = getBaseDateV31_(allRows, state.year, state.month);
+        const start = new Date(baseDate.getTime());
+        start.setFullYear(start.getFullYear() - 1);
+        start.setDate(start.getDate() + 1);
+        rows = allRows.filter(r => {
+          if (isAccidentCommuteRowV31_(r)) return false;
+          if (String(r.store || '').trim() !== String(label || '').trim()) return false;
+          const d = parseDateV31_(r.accidentDate);
+          return d && d >= start && d <= baseDate;
+        });
+      } else {
+        rows = filterRowsByPeriodV31_(allRows, state.year, state.month).filter(r => !isAccidentCommuteRowV31_(r));
+        if (chartType === 'type') rows = rows.filter(r => r.accidentType === label);
+        if (chartType === 'dept') rows = rows.filter(r => r.stdDept === label);
+        if (chartType === 'team') rows = rows.filter(r => r.stdTeam === label);
+      }
+      applyResult(rows);
+    } catch (err) {
+      alert('사고 리스트 조회 오류: ' + (err.message || err));
+    }
+    return;
+  }
+
+  showLoading('사고 리스트를 불러오는 중입니다'); 
+  try {
+    const yr = (chartType === 'store') ? '전체' : state.year;
+    const mth = (chartType === 'store') ? '전체' : state.month;
+
+    const res = await callAPI({
+      action: 'chartRecords', division: state.division,
+      chartType, label, year: yr, month: mth
+    });
+    applyResult((res && res.rows) || []);
   } catch (err) {
     alert('사고 리스트 조회 오류: ' + (err.message || err));
   } finally { hideLoading(); }
@@ -945,9 +1187,11 @@ function findLocalRecordById(recordId) {
     state.dataRows,
     state.dataOptionRows,
     state.listRows,
+    state.accidentAllRows,
     state.approvalRows,
     state.approvalBaseRows,
-    state.approvalTrendRows
+    state.approvalTrendRows,
+    state.approvalAllRows
   ];
   for (const rows of pools) {
     const found = (rows || []).find(r => String(r.recordId) === String(recordId));
@@ -1327,6 +1571,13 @@ async function loadDataFilterOptions(force) {
     storeSearch: ''
   };
 
+  // v31: 로그인 때 전체 데이터를 받아온 경우 월 변경도 서버 호출 없이 브라우저에서 필터링
+  if (hasLoginPreloadRows()) {
+    state.dataOptionRows = filterRowsByPeriodV31_(getLocalAccidentRowsForDivisionV31_(state.division), optionFilters.year, optionFilters.month);
+    state.dataOptionKey = key;
+    return;
+  }
+
   const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(optionFilters) });
   state.dataOptionRows = res.rows || [];
   state.dataOptionKey = key;
@@ -1552,6 +1803,50 @@ async function loadDataTable(options = {}) {
   if (!f.year) return;
   if (!f.month && !hasStoreSearch) return;
 
+  // v31: 로그인 때 전체 데이터를 받은 경우 데이터조회 월/영업부/팀/검색은 모두 서버 호출 없이 처리
+  if (hasLoginPreloadRows()) {
+    try {
+      const allRows = getLocalAccidentRowsForDivisionV31_(state.division);
+
+      if (f.month) {
+        state.dataOptionRows = filterRowsByPeriodV31_(allRows, f.year, f.month);
+        state.dataOptionKey = getDataPeriodKey();
+      } else {
+        state.dataOptionRows = [];
+        state.dataOptionKey = '';
+      }
+
+      const availableDepartments = f.month ? getAvailableDepartments_() : [];
+      if (f.month && f.dept !== '전체' && !availableDepartments.includes(f.dept)) {
+        f.dept = '전체';
+        f.team = '전체';
+      }
+
+      const queryFilters = {
+        year: f.year,
+        month: f.month,
+        dept: f.dept,
+        team: f.team,
+        store: '전체',
+        type: '전체',
+        storeSearch: f.storeSearch
+      };
+
+      const baseRows = f.month
+        ? (state.dataOptionRows || [])
+        : filterRowsByPeriodV31_(allRows, f.year, '전체');
+      state.dataRows = applyAccidentClientFilters(baseRows, queryFilters);
+
+      state.dataPage = 1;
+      renderDataFilters();
+      renderDataTablePage();
+      triggerAiAdviceTimer();
+    } catch (err) {
+      alert('데이터 조회 오류: ' + (err.message || err));
+    }
+    return;
+  }
+
   const canUsePeriodCache = !!f.month && state.dataOptionKey === getDataPeriodKey() && Array.isArray(state.dataOptionRows);
   const needServer = !f.month || options.reloadOptions || !canUsePeriodCache;
   if (needServer) showLoading(options.loadingMessage || '데이터 조회 중입니다');
@@ -1578,11 +1873,8 @@ async function loadDataTable(options = {}) {
     };
 
     if (f.month) {
-      // v30: 같은 연도/월 안에서는 영업부·팀·매장검색을 브라우저에서 즉시 필터링
-      // 기존처럼 필터를 바꿀 때마다 Apps Script를 다시 호출하지 않음
       state.dataRows = applyAccidentClientFilters(state.dataOptionRows || [], queryFilters);
     } else {
-      // 월을 고르지 않은 매장명 검색은 범위가 넓으므로 서버 조회 유지
       const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(queryFilters) });
       state.dataRows = res.rows || [];
     }
@@ -1977,6 +2269,27 @@ async function loadApprovalBundleFromServer_() {
   const f = getApprovalBundleFilters_();
   const currentFilters = { ...f, year: f.year || '전체' };
   const trendFilters = { ...f, year: '전체' };
+
+  // v31: 로그인 때 받은 산재승인 전체 데이터를 기준으로 월/연도/검색을 즉시 필터링
+  if (hasApprovalPreloadRows()) {
+    let trendRows = getApprovalVisibleBaseRows(state.approvalAllRows || []);
+    if (f.month && f.month !== '전체') trendRows = filterRowsByPeriodV31_(trendRows, '전체', f.month);
+    if (f.storeSearch) {
+      const q = String(f.storeSearch || '').trim().toLowerCase();
+      if (q) trendRows = trendRows.filter(r => String(r.store || '').toLowerCase().includes(q));
+    }
+
+    let currentRows = trendRows;
+    if (f.year && f.year !== '전체') currentRows = filterRowsByPeriodV31_(trendRows, f.year, '전체');
+
+    state.approvalBaseRows = currentRows;
+    state.approvalTrendRows = trendRows;
+    setApprovalRowsCache(currentFilters, state.approvalBaseRows);
+    setApprovalTrendRowsCache(trendFilters, state.approvalTrendRows);
+    state.approvalDataLoaded = true;
+    return true;
+  }
+
   const cachedRows = getApprovalRowsFromCache(currentFilters);
   const cachedTrend = getApprovalTrendRowsFromCache(trendFilters);
 
@@ -2154,8 +2467,9 @@ async function loadApprovalDashboardData(options = {}) {
   const currentFilters = { ...bundleFilters, year: bundleFilters.year || '전체' };
   const trendFilters = { ...bundleFilters, year: '전체' };
   const canUseCache = !!getApprovalRowsFromCache(currentFilters) && !!getApprovalTrendRowsFromCache(trendFilters);
+  const canUseLocal = hasApprovalPreloadRows();
 
-  if (!options.skipQuery && !canUseCache) showLoading(options.loadingMessage || '산재 승인 사고 대시보드를 조회 중입니다');
+  if (!options.skipQuery && !canUseCache && !canUseLocal) showLoading(options.loadingMessage || '산재 승인 사고 대시보드를 조회 중입니다');
 
   try {
     if (options.skipQuery && canUseCache) {
@@ -2174,7 +2488,7 @@ async function loadApprovalDashboardData(options = {}) {
   } catch (err) {
     alert('산재 승인 사고 대시보드 오류: ' + (err.message || err));
   } finally {
-    if (!options.skipQuery && !canUseCache) hideLoading();
+    if (!options.skipQuery && !canUseCache && !canUseLocal) hideLoading();
   }
 }
 
@@ -2486,7 +2800,8 @@ async function loadApprovalData(options = {}) {
   const currentFilters = { ...bundleFilters, year: bundleFilters.year || '전체' };
   const trendFilters = { ...bundleFilters, year: '전체' };
   const canUseCache = !!getApprovalRowsFromCache(currentFilters) && !!getApprovalTrendRowsFromCache(trendFilters);
-  if (!canUseCache) showLoading(options.loadingMessage || '산재 승인 사고 데이터를 조회 중입니다');
+  const canUseLocal = hasApprovalPreloadRows();
+  if (!canUseCache && !canUseLocal) showLoading(options.loadingMessage || '산재 승인 사고 데이터를 조회 중입니다');
 
   try {
     await loadApprovalBundleFromServer_();
@@ -2497,7 +2812,7 @@ async function loadApprovalData(options = {}) {
   } catch (err) {
     alert('산재 승인 사고 데이터 조회 오류: ' + (err.message || err));
   } finally {
-    if (!canUseCache) hideLoading();
+    if (!canUseCache && !canUseLocal) hideLoading();
   }
 }
 
@@ -2656,7 +2971,8 @@ async function loadSevereStoreData(options = {}) {
   const currentFilters = { ...bundleFilters, year: bundleFilters.year || '전체' };
   const trendFilters = { ...bundleFilters, year: '전체' };
   const canUseCache = !!getApprovalRowsFromCache(currentFilters) && !!getApprovalTrendRowsFromCache(trendFilters);
-  if (!canUseCache) showLoading(options.loadingMessage || '중상해 매장 데이터를 조회 중입니다');
+  const canUseLocal = hasApprovalPreloadRows();
+  if (!canUseCache && !canUseLocal) showLoading(options.loadingMessage || '중상해 매장 데이터를 조회 중입니다');
 
   try {
     await loadApprovalBundleFromServer_();
@@ -2669,7 +2985,7 @@ async function loadSevereStoreData(options = {}) {
   } catch (err) {
     alert('중상해 매장 조회 오류: ' + (err.message || err));
   } finally {
-    if (!canUseCache) hideLoading();
+    if (!canUseCache && !canUseLocal) hideLoading();
   }
 }
 
