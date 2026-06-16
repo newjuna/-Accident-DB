@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbwRgLdEebe5dG1Ia_QgL8RaGqV37LSvCQ72QYhabfhAgQg9p5ITs4cGDRGTh_6ELhU6pQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -3409,6 +3409,7 @@ function buildApprovalSummaryStats(rows, selectedYear) {
   };
 }
 
+
 function buildApprovalSummarySvgReport(ctx) {
   const stats = ctx.summaryStats || buildApprovalSummaryStats(ctx.rows || [], ctx.year);
   const approvedCount = Number(stats.approvedCount ?? ((stats.visibleRows || []).length || 0));
@@ -3416,23 +3417,35 @@ function buildApprovalSummarySvgReport(ctx) {
   const severeCount = Number(stats.severeCount ?? ((stats.severeRows || []).length || 0));
   const monthNum = Number(String(ctx.monthText).replace('월', '')) || 0;
   const monthLastDay = monthNum ? getLastDayOfMonth(ctx.year, monthNum) : '31';
-  const monthLabel = monthNum ? `${monthNum}월 기준` : '연간 누적 기준';
   const topType = (stats.typeCounts || [])[0] || { label: '-', count: 0 };
   const yearCounts = Array.isArray(ctx.yearCounts) && ctx.yearCounts.length
     ? ctx.yearCounts
     : buildApprovalYearCountsForSvg(ctx.rows || [], ctx.monthText);
-  const maxYear = Math.max(1, ...yearCounts.map(r => r.count));
-  const maxLoss = Math.max(1, ...stats.lossByDept.map(r => r.count));
+  const maxYear = Math.max(1, ...yearCounts.map(r => Number(r.count || 0)));
+  const maxLoss = Math.max(1, ...((stats.lossByDept || []).map(r => Number(r.count || 0))));
 
+  const chartY = 286;
+  const chartH = 288;
+  const chartGap = 18;
+  const cardW = 378;
+  const card1X = 54;
+  const card2X = card1X + cardW + chartGap;
+  const card3X = card2X + cardW + chartGap;
+
+  const barBaseY = 522;
+  const barWidth = 72;
+  const barStep = 104;
+  const barStartX = card1X + 62;
   const yearBars = yearCounts.map((r, i) => {
-    const x = 140 + i * 155;
-    const h = Math.max(12, Math.round((r.count / maxYear) * 160));
-    const y = 514 - h;
-    return { ...r, x, h, y, color: i === 2 ? '#ff1a1a' : '#0b2f86' };
+    const value = Number(r.count || 0);
+    const h = Math.max(12, Math.round((value / maxYear) * 168));
+    const y = barBaseY - h;
+    const x = barStartX + i * barStep;
+    return { ...r, x, h, y, value, color: i === 2 ? '#ff1a1a' : '#0b2f86' };
   });
 
-  const typeRows = (stats.typeCounts.length ? stats.typeCounts : [{ label: '데이터 없음', count: 0 }]).slice(0, 3);
-  const lossRows = (stats.lossByDept.length ? stats.lossByDept : [{ label: '데이터 없음', count: 0 }]).slice(0, 3);
+  const typeRows = ((stats.typeCounts || []).length ? stats.typeCounts : [{ label: '데이터 없음', count: 0 }]).slice(0, 3);
+  const lossRows = ((stats.lossByDept || []).length ? stats.lossByDept : [{ label: '데이터 없음', count: 0 }]).slice(0, 3);
 
   const typeTotal = typeRows.reduce((sum, r) => sum + Number(r.count || 0), 0);
   const donutColors = ['#0b2f86', '#ff1a1a', '#f28c28'];
@@ -3457,7 +3470,7 @@ function buildApprovalSummarySvgReport(ctx) {
   }
 
   let currentAngle = 0;
-  const donutCx = 900, donutCy = 349, donutOuter = 70, donutInner = 38;
+  const donutCx = card2X + 112, donutCy = 402, donutOuter = 68, donutInner = 38;
   const donutSvg = typeTotal > 0 ? typeRows.map((r, i) => {
     const value = Number(r.count || 0);
     const sweep = (value / typeTotal) * 360;
@@ -3468,24 +3481,26 @@ function buildApprovalSummarySvgReport(ctx) {
   }).join('') : `<circle cx="${donutCx}" cy="${donutCy}" r="${donutOuter}" fill="none" stroke="#e5e7eb" stroke-width="32"/>`;
 
   const donutLegendSvg = typeRows.map((r, i) => {
-    const y = 314 + i * 28;
+    const y = 372 + i * 44;
     return `
-      <circle cx="1008" cy="${y}" r="6" fill="${donutColors[i] || '#8a8f98'}"/>
-      <text x="1022" y="${y + 5}" class="dark" font-size="15" font-weight="900">${svgEsc(shortSvgText(r.label, 10))}</text>
-      <text x="1166" y="${y + 5}" text-anchor="end" class="dark" font-size="15" font-weight="900">${Number(r.count || 0).toLocaleString()}건</text>`;
+      <circle cx="${card2X + 242}" cy="${y}" r="7" fill="${donutColors[i] || '#8a8f98'}"/>
+      <text x="${card2X + 258}" y="${y + 5}" class="dark" font-size="17" font-weight="900">${svgEsc(shortSvgText(r.label, 9))}</text>
+      <text x="${card2X + 340}" y="${y + 5}" text-anchor="end" class="dark" font-size="17" font-weight="900">${Number(r.count || 0).toLocaleString()}건</text>`;
   }).join('');
 
+  const lossBarX = card3X + 148;
+  const lossBarW = 152;
   const lossRowsSvg = lossRows.map((r, i) => {
-    const y = 483 + i * 36;
-    const width = Math.max(8, Math.round((Number(r.count || 0) / maxLoss) * 300));
+    const y = 378 + i * 56;
+    const width = Math.max(8, Math.round((Number(r.count || 0) / maxLoss) * lossBarW));
     return `
-      <text x="690" y="${y}" class="dark" font-size="16" font-weight="900">${svgEsc(shortSvgText(r.label, 11))}</text>
-      <rect x="815" y="${y - 12}" width="300" height="13" rx="7" fill="#edf0f5"/>
-      <rect x="815" y="${y - 12}" width="${width}" height="13" rx="7" fill="#ff1a1a"/>
-      <text x="1168" y="${y}" text-anchor="end" class="dark" font-size="16" font-weight="900">${Number(r.count || 0).toLocaleString()}일</text>`;
+      <text x="${card3X + 30}" y="${y}" class="dark" font-size="17" font-weight="900">${svgEsc(shortSvgText(r.label, 8))}</text>
+      <rect x="${lossBarX}" y="${y - 12}" width="${lossBarW}" height="14" rx="7" fill="#edf0f5"/>
+      <rect x="${lossBarX}" y="${y - 12}" width="${width}" height="14" rx="7" fill="#ff1a1a"/>
+      <text x="${card3X + 344}" y="${y}" text-anchor="end" class="dark" font-size="17" font-weight="900">${Number(r.count || 0).toLocaleString()}일</text>`;
   }).join('');
 
-  const severeStoreLine = stats.severeStores.length
+  const severeStoreLine = (stats.severeStores || []).length
     ? stats.severeStores.slice(0, 2).map(r => {
         const lost = Number(r.maxLostDays || 0).toLocaleString();
         const count = Number(r.count || 0).toLocaleString();
@@ -3502,7 +3517,7 @@ function buildApprovalSummarySvgReport(ctx) {
       .navy{fill:#0b2f86}.red{fill:#ff1a1a}.orange{fill:#f28c28}.dark{fill:#222}.muted{fill:#555}
       .title{font-size:50px;font-weight:900;letter-spacing:-2px}
       .sub{font-size:19px;font-weight:900}
-      .panel-title{font-size:20px;font-weight:900}
+      .panel-title{font-size:18px;font-weight:900}
       .shadow{filter:drop-shadow(0px 4px 8px rgba(0,0,0,.12))}
     </style>
   </defs>
@@ -3532,19 +3547,20 @@ function buildApprovalSummarySvgReport(ctx) {
     </g>
 
     <g>
-      <rect x="54" y="286" width="560" height="288" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="82" y="328" class="panel-title navy">3개년 산업재해 승인 건수 비교<tspan dx="8" class="muted" font-size="15" font-weight="900">(각 연도 ${svgEsc(monthLabel)} 비교)</tspan></text>
-      <line x1="92" y1="522" x2="545" y2="522" stroke="#e5e7eb" stroke-width="2"/>
+      <rect x="${card1X}" y="${chartY}" width="${cardW}" height="${chartH}" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="${card1X + 26}" y="${chartY + 38}" class="panel-title navy">3개년 산업재해 승인 건수 비교</text>
+      <text x="${card1X + 26}" y="${chartY + 61}" class="muted" font-size="13" font-weight="900">(각 연도 ${svgEsc(monthNum ? `${monthNum}월 기준 비교` : '연간 누적 기준 비교')})</text>
+      <line x1="${card1X + 44}" y1="${barBaseY}" x2="${card1X + cardW - 36}" y2="${barBaseY}" stroke="#e5e7eb" stroke-width="2"/>
       ${yearBars.map(p => `
-        <text x="${p.x + 42}" y="${p.y - 14}" text-anchor="middle" class="dark" font-size="22" font-weight="900">${p.count}건</text>
-        <rect x="${p.x}" y="${p.y}" width="88" height="${p.h}" rx="16" fill="${p.color}" opacity="${p.year === String(ctx.year) ? '1' : '.88'}"/>
-        <text x="${p.x + 44}" y="555" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.year}</text>
+        <text x="${p.x + 36}" y="${p.y - 14}" text-anchor="middle" class="dark" font-size="20" font-weight="900">${p.value}건</text>
+        <rect x="${p.x}" y="${p.y}" width="${barWidth}" height="${p.h}" rx="16" fill="${p.color}" opacity="${p.year === String(ctx.year) ? '1' : '.88'}"/>
+        <text x="${p.x + 36}" y="${chartY + 254}" text-anchor="middle" class="dark" font-size="18" font-weight="900">${p.year}</text>
       `).join('')}
     </g>
 
     <g>
-      <rect x="644" y="286" width="580" height="152" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="680" y="323" class="panel-title navy">재해유형별 건수</text>
+      <rect x="${card2X}" y="${chartY}" width="${cardW}" height="${chartH}" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="${card2X + 26}" y="${chartY + 38}" class="panel-title navy">재해유형별 건수</text>
       ${donutSvg}
       <circle cx="${donutCx}" cy="${donutCy}" r="${donutInner - 2}" fill="#fff"/>
       <text x="${donutCx}" y="${donutCy - 4}" text-anchor="middle" class="dark" font-size="16" font-weight="900">주요</text>
@@ -3553,8 +3569,8 @@ function buildApprovalSummarySvgReport(ctx) {
     </g>
 
     <g>
-      <rect x="644" y="454" width="580" height="120" rx="18" fill="#fff" stroke="#d9d9d9"/>
-      <text x="680" y="490" class="panel-title navy">영업부별 근로손실일수</text>
+      <rect x="${card3X}" y="${chartY}" width="${cardW}" height="${chartH}" rx="18" fill="#fff" stroke="#d9d9d9"/>
+      <text x="${card3X + 26}" y="${chartY + 38}" class="panel-title navy">영업부별 근로손실일수</text>
       ${lossRowsSvg}
     </g>
 
