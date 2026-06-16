@@ -1,18 +1,36 @@
-v27_og_absolute_thumbnail
+v29_summary_fast_api
 
 변경 내용
-1. Teams/카카오톡 링크 미리보기용 OG 썸네일 경로를 절대주소로 변경했습니다.
-2. 썸네일 이미지를 루트 경로 thumbnail.png에도 추가했습니다.
-3. 미리보기 안정성을 위해 1200x630 규격 썸네일을 추가했습니다.
-4. og:url, og:image:secure_url, twitter:image, image_src를 보강했습니다.
+1. 사고경위서 사고 요약 생성 속도 개선
+   - 기존: 안전보건팀 3장 요약 생성 시 dashboard API를 최대 9번 호출
+   - 변경: summaryBatch API 1번 호출로 수도권/지방/전체 요약 데이터를 한 번에 수신
+   - Apps Script에서 원본DB를 한 번 읽고 수도권/지방/전체를 나눠 계산하도록 개선
+
+2. 산재 승인 사고 요약 생성 속도 개선
+   - 기존: 원본 행 목록을 브라우저로 받은 뒤 브라우저에서 다시 집계
+   - 변경: approvalSummary API에서 승인건수, 3대유형, 근로손실일수, 91일 이상 재해, TOP3만 계산해서 전달
+   - 화면/요약 이미지에는 기존 디자인 기준 유지
+
+3. 기존 기능 보존
+   - v28 Teams/카카오톡 썸네일 설정 유지
+   - 사고 원본DB 안전보건팀 전용 노출 유지
+   - 출퇴근재해 제외 기준 유지
+   - 산재 승인 사고 엑셀 조건부 색상 유지
 
 배포 방법
-- ZIP 압축을 풀고 모든 파일을 GitHub Pages 저장소에 덮어쓰기
-- 특히 index.html, thumbnail.png, assets/og/thumbnail.png가 모두 올라가야 함
+1. ZIP 압축 해제
+2. GitHub Pages 저장소에 index.html / app.js / style.css / logo.png / thumbnail 관련 파일 전체 덮어쓰기
+3. Apps Script의 Code.gs도 반드시 v29 Code.gs로 교체
+4. Apps Script 저장 후 새 배포 또는 기존 웹앱 배포 업데이트
+5. GitHub Pages 주소에서 강력 새로고침 후 요약 생성 테스트
 
-공유 테스트 주소
-https://newjuna.github.io/-Accident-DB/?v=27
+중요
+- app.js만 바꾸고 Code.gs를 바꾸지 않으면 summaryBatch API가 동작하지 않아 기존 방식으로 대체됩니다.
+- 속도 개선 효과를 보려면 반드시 app.js와 Code.gs를 같이 반영해야 합니다.
 
-주의
-- 카카오톡/Teams는 이전 미리보기를 캐시할 수 있어 바로 안 바뀔 수 있습니다.
-- 카카오톡은 OG 캐시 초기화 후 새 대화방에서 테스트하는 것이 가장 정확합니다.
+테스트 순서
+1. 안전보건팀 로그인
+2. 사고경위서 사고 > 대시보드 > 연도/월 선택 > 요약 생성
+3. 3장 ZIP 생성이 기존보다 빨라졌는지 확인
+4. 산재 승인 사고 > 대시보드 > 연도/월 선택 > 요약 생성
+5. 도넛/상위3/91일 이상 문구가 기존과 동일하게 나오는지 확인

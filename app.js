@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbz2ETxh8lqd4e7Nn_xAu8gk5DFnl1pqxY8ej5kJ_iyR1e_oovssdrZH8IZzIvngiWJFyg/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -2604,7 +2604,47 @@ async function openCaptureMode() {
     const logoDataUrl = await getLogoDataUrl();
     let pages = [];
 
-    if (state.division === '안전보건팀') {
+    // v29: 요약 생성용 통합 API 1회 호출 방식
+    // 기존에는 안전보건팀 3장 생성 시 dashboard API를 최대 9번 호출했지만,
+    // 이제 summaryBatch 한 번으로 현재월/전월/연간누적 데이터를 모두 받아온다.
+    let batch = null;
+    try {
+      batch = await callAPI({
+        action: 'summaryBatch',
+        division: state.division,
+        year: selectedYear,
+        month: selectedMonth
+      });
+    } catch (batchErr) {
+      console.warn('summaryBatch API 실패, 기존 방식으로 대체합니다.', batchErr);
+      batch = null;
+    }
+
+    if (batch && batch.ok && Array.isArray(batch.pages) && batch.pages.length) {
+      pages = await Promise.all(batch.pages.map(def =>
+        buildSummarySvgForDivision(def.division, def.label, selectedYear, selectedMonth, logoDataUrl, def.integrated, def)
+          .then(svg => ({
+            svg,
+            label: def.label,
+            fileName: def.fileSuffix
+              ? `산업재해_현황_요약_${selectedYear}년_${selectedMonth}_${def.fileSuffix}.png`
+              : `산업재해_현황_요약_${selectedYear}년_${selectedMonth}.png`
+          }))
+      ));
+
+      if (state.division === '안전보건팀') {
+        state.currentSummarySvgs = pages;
+        state.currentSummarySvg = pages[0] ? pages[0].svg : null;
+        state.currentSummaryFileName = pages[0] ? pages[0].fileName : null;
+        state.currentSummaryZipName = `산업재해_현황_요약_${selectedYear}년_${selectedMonth}_안전보건팀_3장.zip`;
+      } else {
+        state.currentSummarySvg = pages[0] ? pages[0].svg : null;
+        state.currentSummarySvgs = [];
+        state.currentSummaryFileName = pages[0] ? pages[0].fileName : null;
+        state.currentSummaryZipName = null;
+      }
+    } else if (state.division === '안전보건팀') {
+      // 하위 호환: Apps Script Code.gs를 아직 v29로 교체하지 않은 경우 기존 방식으로 대체
       const pageDefs = [
         { division: '수도권영업부문', label: '수도권영업부문', fileSuffix: '01_수도권영업부문', integrated: false },
         { division: '지방영업부문', label: '지방영업부문', fileSuffix: '02_지방영업부문', integrated: false },
@@ -2710,15 +2750,27 @@ function showSummaryPagesInModal(pages) {
   });
 }
 
-async function buildSummarySvgForDivision(division, displayDivision, selectedYear, selectedMonth, logoDataUrl, integrated) {
+async function buildSummarySvgForDivision(division, displayDivision, selectedYear, selectedMonth, logoDataUrl, integrated, preloadedData = null) {
   const monthNum = Number(String(selectedMonth).replace('월', ''));
-  const prevDate = getPreviousYearMonth(selectedYear, selectedMonth);
+  const prevDate = preloadedData && preloadedData.prevDate
+    ? preloadedData.prevDate
+    : getPreviousYearMonth(selectedYear, selectedMonth);
 
-  const [currentData, prevData, yearTotalData] = await Promise.all([
-    callAPI({ action: 'dashboard', division, year: selectedYear, month: selectedMonth }),
-    callAPI({ action: 'dashboard', division, year: prevDate.year, month: prevDate.month }),
-    callAPI({ action: 'dashboard', division, year: selectedYear, month: '전체' })
-  ]);
+  let currentData, prevData, yearTotalData;
+  if (preloadedData && preloadedData.currentData && preloadedData.prevData && preloadedData.yearTotalData) {
+    currentData = preloadedData.currentData;
+    prevData = preloadedData.prevData;
+    yearTotalData = preloadedData.yearTotalData;
+  } else {
+    const results = await Promise.all([
+      callAPI({ action: 'dashboard', division, year: selectedYear, month: selectedMonth }),
+      callAPI({ action: 'dashboard', division, year: prevDate.year, month: prevDate.month }),
+      callAPI({ action: 'dashboard', division, year: selectedYear, month: '전체' })
+    ]);
+    currentData = results[0];
+    prevData = results[1];
+    yearTotalData = results[2];
+  }
 
   const currentTotal = Number(((currentData || {}).kpi || {}).total || 0);
   const prevTotal = Number(((prevData || {}).kpi || {}).total || 0);
@@ -2743,6 +2795,28 @@ async function buildSummarySvgForDivision(division, displayDivision, selectedYea
 
 
 async function buildApprovalSummarySvgForSafety(selectedYear, selectedMonth, logoDataUrl) {
+  // v29: 산재 승인 사고 요약은 원본 행 전체를 받지 않고, 서버에서 계산된 요약값만 받는다.
+  try {
+    const summary = await callAPI({
+      action: 'approvalSummary',
+      division: '안전보건팀',
+      year: selectedYear,
+      month: selectedMonth
+    });
+    if (summary && summary.ok && summary.stats) {
+      return buildApprovalSummarySvgReport({
+        year: selectedYear,
+        monthText: selectedMonth,
+        summaryStats: summary.stats,
+        yearCounts: summary.yearCounts || [],
+        logoDataUrl
+      });
+    }
+  } catch (err) {
+    console.warn('approvalSummary API 실패, 기존 행 조회 방식으로 대체합니다.', err);
+  }
+
+  // 하위 호환: Apps Script Code.gs를 아직 v29로 교체하지 않은 경우 기존 방식으로 대체
   const res = await callAPI({
     action: 'query',
     division: '안전보건팀',
@@ -2776,16 +2850,33 @@ function buildApprovalSummaryStats(rows, selectedYear) {
   const lossByDept = makeSumRows_(visibleRows, 'stdDept', 'lostDays')
     .map(r => ({ ...r, label: cleanDeptName(r.label) }))
     .slice(0, 5);
-  return { visibleAll, visibleRows, threeTypeRows, severeRows, lostDays, severeStores, typeCounts, lossByDept };
+  return {
+    visibleAll,
+    visibleRows,
+    threeTypeRows,
+    severeRows,
+    approvedCount: visibleRows.length,
+    threeTypeCount: threeTypeRows.length,
+    severeCount: severeRows.length,
+    lostDays,
+    severeStores,
+    typeCounts,
+    lossByDept
+  };
 }
 
 function buildApprovalSummarySvgReport(ctx) {
-  const stats = buildApprovalSummaryStats(ctx.rows || [], ctx.year);
+  const stats = ctx.summaryStats || buildApprovalSummaryStats(ctx.rows || [], ctx.year);
+  const approvedCount = Number(stats.approvedCount ?? ((stats.visibleRows || []).length || 0));
+  const threeTypeCount = Number(stats.threeTypeCount ?? ((stats.threeTypeRows || []).length || 0));
+  const severeCount = Number(stats.severeCount ?? ((stats.severeRows || []).length || 0));
   const monthNum = Number(String(ctx.monthText).replace('월', '')) || 0;
   const monthLastDay = monthNum ? getLastDayOfMonth(ctx.year, monthNum) : '31';
   const monthLabel = monthNum ? `${monthNum}월 기준` : '연간 누적 기준';
-  const topType = stats.typeCounts[0] || { label: '-', count: 0 };
-  const yearCounts = buildApprovalYearCountsForSvg(ctx.rows || [], ctx.monthText);
+  const topType = (stats.typeCounts || [])[0] || { label: '-', count: 0 };
+  const yearCounts = Array.isArray(ctx.yearCounts) && ctx.yearCounts.length
+    ? ctx.yearCounts
+    : buildApprovalYearCountsForSvg(ctx.rows || [], ctx.monthText);
   const maxYear = Math.max(1, ...yearCounts.map(r => r.count));
   const maxLoss = Math.max(1, ...stats.lossByDept.map(r => r.count));
 
@@ -2880,11 +2971,11 @@ function buildApprovalSummarySvgReport(ctx) {
     <g class="shadow">
       <rect x="58" y="138" width="272" height="112" rx="18" fill="#fff" stroke="#d9d9d9"/>
       <text x="88" y="174" class="dark" font-size="19" font-weight="900">산업재해 승인 건수</text>
-      <text x="88" y="225" class="navy" font-size="42" font-weight="900">${stats.visibleRows.length}건</text>
+      <text x="88" y="225" class="navy" font-size="42" font-weight="900">${approvedCount}건</text>
 
       <rect x="354" y="138" width="272" height="112" rx="18" fill="#fff" stroke="#d9d9d9"/>
       <text x="384" y="174" class="dark" font-size="19" font-weight="900">3대유형</text>
-      <text x="384" y="218" class="orange" font-size="40" font-weight="900">${stats.threeTypeRows.length}건</text>
+      <text x="384" y="218" class="orange" font-size="40" font-weight="900">${threeTypeCount}건</text>
       <text x="384" y="242" fill="#666" font-size="12" font-weight="800">넘어짐 · 무리한 동작 · 물체에 맞음</text>
 
       <rect x="650" y="138" width="272" height="112" rx="18" fill="#fff" stroke="#d9d9d9"/>
@@ -2893,7 +2984,7 @@ function buildApprovalSummarySvgReport(ctx) {
 
       <rect x="946" y="138" width="272" height="112" rx="18" fill="#fff" stroke="#d9d9d9"/>
       <text x="976" y="174" class="dark" font-size="19" font-weight="900">91일 이상 재해</text>
-      <text x="976" y="225" fill="#777" font-size="42" font-weight="900">${stats.severeRows.length}건</text>
+      <text x="976" y="225" fill="#777" font-size="42" font-weight="900">${severeCount}건</text>
     </g>
 
     <g>
@@ -2926,7 +3017,7 @@ function buildApprovalSummarySvgReport(ctx) {
     <g>
       <rect x="54" y="612" width="1170" height="76" rx="18" fill="#fff7f7" stroke="#ffc7c7"/>
       <text x="84" y="653" class="red" font-size="22" font-weight="900">핵심 포인트</text>
-      <text x="228" y="649" class="dark" font-size="16" font-weight="900">승인 <tspan class="red">${stats.visibleRows.length}건</tspan> · 3대유형 <tspan class="orange">${stats.threeTypeRows.length}건</tspan> · 최다 재해유형 <tspan class="red">${svgEsc(topType.label)}</tspan> · 91일 이상 재해 <tspan class="red">${stats.severeRows.length}건</tspan></text>
+      <text x="228" y="649" class="dark" font-size="16" font-weight="900">승인 <tspan class="red">${approvedCount}건</tspan> · 3대유형 <tspan class="orange">${threeTypeCount}건</tspan> · 최다 재해유형 <tspan class="red">${svgEsc(topType.label)}</tspan> · 91일 이상 재해 <tspan class="red">${severeCount}건</tspan></text>
       <text x="228" y="677" class="dark" font-size="14" font-weight="900">91일 이상 산업재해 발생 매장 : <tspan class="red">${severeStoreLineSvg}</tspan></text>
     </g>
   </g>
