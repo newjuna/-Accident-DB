@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbzX3LZMGmKDiS2Iq07Z54TkrMKB90-c_0rPZWHbOmhxJf-qTlMU52F8lxgkWMUVI09Q/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -84,7 +84,11 @@ const state = {
   currentSummaryFileName: null,
   currentSummaryZipName: null,
 
-  currentView: 'dashboard'
+  currentView: 'dashboard',
+
+  // v30 전체 로딩 최적화용: 같은 조건 재조회/상세조회 재호출 방지
+  apiCache: {},
+  apiInflight: {}
 };
 
 const PAGE_SIZE_MODAL = 5;
@@ -205,16 +209,64 @@ function hideLoading() {
   }, 220);
 }
 
-async function callAPI(params) {
-  // 브라우저 캐싱으로 인한 실시간 갱신 누락 방지 (Cache Busting)
-  params._ = Date.now();
-  const query = new URLSearchParams(params).toString();
+function stableApiStringify_(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value !== 'object') return String(value);
+  if (Array.isArray(value)) return '[' + value.map(stableApiStringify_).join(',') + ']';
+  return '{' + Object.keys(value).sort().map(k => `${k}:${stableApiStringify_(value[k])}`).join('|') + '}';
+}
+
+function getApiCacheTtl_(action) {
+  // 0이면 캐시하지 않음. 단위: ms
+  const map = {
+    startup: 3 * 60 * 1000,
+    init: 10 * 60 * 1000,
+    dashboard: 3 * 60 * 1000,
+    query: 5 * 60 * 1000,
+    approvalBundle: 5 * 60 * 1000,
+    approvalSummary: 3 * 60 * 1000,
+    summaryBatch: 3 * 60 * 1000,
+    chartRecords: 5 * 60 * 1000,
+    detail: 10 * 60 * 1000
+  };
+  return map[action] || 0;
+}
+
+function makeApiCacheKey_(params) {
+  const clone = { ...(params || {}) };
+  delete clone._;
+  delete clone.noCache;
+  return stableApiStringify_(clone);
+}
+
+async function callAPI(params, options = {}) {
+  const action = String((params && params.action) || '');
+  const ttl = options.cache === false || params.noCache ? 0 : getApiCacheTtl_(action);
+  const cacheKey = makeApiCacheKey_(params);
+
+  if (ttl > 0) {
+    const cached = state.apiCache[cacheKey];
+    if (cached && Date.now() - cached.time < ttl) return cached.data;
+    if (state.apiInflight[cacheKey]) return state.apiInflight[cacheKey];
+  }
+
+  const requestParams = { ...(params || {}), _: Date.now() }; // Cache Busting
+  const query = new URLSearchParams(requestParams).toString();
   const url = API_URL + '?' + query;
-  const response = await fetch(url, { redirect: 'follow' });
-  if (!response.ok) throw new Error('서버 응답 오류: HTTP ' + response.status);
-  const data = await response.json();
-  if (data && data.ok === false && data.message) throw new Error(data.message);
-  return data;
+  const promise = fetch(url, { redirect: 'follow', cache: 'no-store' })
+    .then(async response => {
+      if (!response.ok) throw new Error('서버 응답 오류: HTTP ' + response.status);
+      const data = await response.json();
+      if (data && data.ok === false && data.message) throw new Error(data.message);
+      if (ttl > 0) state.apiCache[cacheKey] = { time: Date.now(), data };
+      return data;
+    })
+    .finally(() => {
+      if (ttl > 0) delete state.apiInflight[cacheKey];
+    });
+
+  if (ttl > 0) state.apiInflight[cacheKey] = promise;
+  return promise;
 }
 
 function esc(v) {
@@ -387,11 +439,15 @@ async function login() {
 async function initAfterLogin() {
   showLoading('초기 데이터를 불러오는 중입니다');
   try {
-    // 병렬 비동기 API 통신 처리로 초기화 로딩 지연 극대화 개선
-    const [init, dashboardData] = await Promise.all([
-      callAPI({ action: 'init', division: state.division }),
-      callAPI({ action: 'dashboard', division: state.division, year: String(new Date().getFullYear()), month: '전체' })
-    ]);
+    // v30: 초기화 + 첫 대시보드를 Apps Script 1회 호출로 묶어서 로딩 단축
+    const startup = await callAPI({
+      action: 'startup',
+      division: state.division,
+      year: String(new Date().getFullYear()),
+      month: '전체'
+    });
+    const init = startup.init || {};
+    const dashboardData = startup.dashboard || {};
 
     state.initFilterData = init; // 데이터 조회 필터링을 위한 원본 백업
     state.lastDashboardData = dashboardData;
@@ -866,72 +922,115 @@ function makeDataCardList(rows) {
 }
 
 /* ============ 사고 상세 팝업 (v13.0 플레이풀 카드형 디자인) ============ */
+function makeDetailFromLocalRecord(r) {
+  if (!r) return null;
+  return {
+    재해일자: r.accidentDate || '-',
+    영업부: r.stdDept || r.sourceDept || '-',
+    팀: r.stdTeam || r.sourceTeam || '-',
+    매장명: r.store || '-',
+    재해자명: r.victimName || '-',
+    사번: r.employeeNo || '-',
+    재해유형: r.accidentType || '-',
+    기인물: r.causeObject || '-',
+    산재승인유무: r.approvalYn || '-',
+    근로손실일수: r.lostDays || '-',
+    KPI집계현황분류: r.kpiCategory || '-',
+    사고내용: r.accidentContent || '-'
+  };
+}
+
+function findLocalRecordById(recordId) {
+  const pools = [
+    state.dataRows,
+    state.dataOptionRows,
+    state.listRows,
+    state.approvalRows,
+    state.approvalBaseRows,
+    state.approvalTrendRows
+  ];
+  for (const rows of pools) {
+    const found = (rows || []).find(r => String(r.recordId) === String(recordId));
+    if (found) return found;
+  }
+  return null;
+}
+
+function renderDetailModal(d) {
+  const accidentDate = detailVal(d, '재해일자');
+  const dept = cleanDeptName(detailVal(d, '영업부'));
+  const team = detailVal(d, '팀');
+  const store = detailVal(d, '매장명');
+  const victim = detailVal(d, '재해자명');
+  const employeeNo = detailVal(d, '사번');
+  const accidentType = detailVal(d, '재해유형');
+  const cause = detailVal(d, '기인물');
+  const accidentContent = detailVal(d, '사고내용');
+  const typeClass = getAccidentTypeClass(accidentType);
+
+  const html = `
+    <div class="detail-playful">
+      <div class="detail-sticker">사고</div>
+
+      <section class="detail-hero-card">
+        <div class="detail-hero-title">
+          <div class="detail-hero-icon">📋</div>
+          <div>
+            <h4>사고 상세보기</h4>
+            <p>${esc(accidentDate)} · ${esc(dept)} · ${esc(team)} · ${esc(store)}</p>
+          </div>
+        </div>
+        <span class="detail-type-badge ${typeClass}">${esc(accidentType)}</span>
+      </section>
+
+      <section class="detail-mini-grid">
+        ${makeDetailMiniCard('📅', '재해일자', accidentDate)}
+        ${makeDetailMiniCard('🏬', '매장명', store)}
+        ${makeDetailMiniCard('👥', '팀', team)}
+        ${makeDetailMiniCard('🏢', '영업부', dept)}
+      </section>
+
+      <section class="detail-section-grid">
+        <div class="detail-paper-card person-card">
+          <h5><span>👤</span> 인적 정보</h5>
+          ${makeDetailRow('👤', '재해자명', victim)}
+          ${makeDetailRow('🪪', '사번', employeeNo)}
+        </div>
+
+        <div class="detail-paper-card type-card">
+          <h5><span>⚠️</span> 사고 분류</h5>
+          ${makeDetailRow('⚠️', '재해유형', accidentType)}
+          ${makeDetailRow('📦', '기인물', cause)}
+        </div>
+      </section>
+
+      <section class="detail-paper-card accident-card">
+        <h5><span>📝</span> 사고 내용</h5>
+        <div class="detail-accident-content">${esc(accidentContent)}</div>
+      </section>
+    </div>
+  `;
+
+  $('detailBody').innerHTML = html;
+  $('detailModal').classList.remove('hidden');
+}
+
 async function openDetail(recordId) {
+  const localRecord = findLocalRecordById(recordId);
+  if (localRecord) {
+    renderDetailModal(makeDetailFromLocalRecord(localRecord));
+    return;
+  }
+
   showLoading('사고 상세를 불러오는 중입니다');
   try {
     const res = await callAPI({ action: 'detail', division: state.division, recordId });
-    const d = res.detail || {};
-
-    const accidentDate = detailVal(d, '재해일자');
-    const dept = cleanDeptName(detailVal(d, '영업부'));
-    const team = detailVal(d, '팀');
-    const store = detailVal(d, '매장명');
-    const victim = detailVal(d, '재해자명');
-    const employeeNo = detailVal(d, '사번');
-    const accidentType = detailVal(d, '재해유형');
-    const cause = detailVal(d, '기인물');
-    const accidentContent = detailVal(d, '사고내용');
-    const typeClass = getAccidentTypeClass(accidentType);
-
-    const html = `
-      <div class="detail-playful">
-        <div class="detail-sticker">사고</div>
-
-        <section class="detail-hero-card">
-          <div class="detail-hero-title">
-            <div class="detail-hero-icon">📋</div>
-            <div>
-              <h4>사고 상세보기</h4>
-              <p>${esc(accidentDate)} · ${esc(dept)} · ${esc(team)} · ${esc(store)}</p>
-            </div>
-          </div>
-          <span class="detail-type-badge ${typeClass}">${esc(accidentType)}</span>
-        </section>
-
-        <section class="detail-mini-grid">
-          ${makeDetailMiniCard('📅', '재해일자', accidentDate)}
-          ${makeDetailMiniCard('🏬', '매장명', store)}
-          ${makeDetailMiniCard('👥', '팀', team)}
-          ${makeDetailMiniCard('🏢', '영업부', dept)}
-        </section>
-
-        <section class="detail-section-grid">
-          <div class="detail-paper-card person-card">
-            <h5><span>👤</span> 인적 정보</h5>
-            ${makeDetailRow('👤', '재해자명', victim)}
-            ${makeDetailRow('🪪', '사번', employeeNo)}
-          </div>
-
-          <div class="detail-paper-card type-card">
-            <h5><span>⚠️</span> 사고 분류</h5>
-            ${makeDetailRow('⚠️', '재해유형', accidentType)}
-            ${makeDetailRow('📦', '기인물', cause)}
-          </div>
-        </section>
-
-        <section class="detail-paper-card accident-card">
-          <h5><span>📝</span> 사고 내용</h5>
-          <div class="detail-accident-content">${esc(accidentContent)}</div>
-        </section>
-      </div>
-    `;
-
-    $('detailBody').innerHTML = html;
-    $('detailModal').classList.remove('hidden');
+    renderDetailModal(res.detail || {});
   } catch (err) {
     alert('상세 조회 오류: ' + (err.message || err));
   } finally { hideLoading(); }
 }
+
 window.openDetail = openDetail;
 
 function closeModals() {
@@ -1233,6 +1332,18 @@ async function loadDataFilterOptions(force) {
   state.dataOptionKey = key;
 }
 
+
+function applyAccidentClientFilters(rows, f) {
+  let out = rows || [];
+  if (f.dept && f.dept !== '전체') out = out.filter(r => r.stdDept === f.dept);
+  if (f.team && f.team !== '전체') out = out.filter(r => r.stdTeam === f.team);
+  if (f.storeSearch) {
+    const q = String(f.storeSearch || '').trim().toLowerCase();
+    if (q) out = out.filter(r => String(r.store || '').toLowerCase().includes(q));
+  }
+  return out;
+}
+
 function getDeptCounts_() {
   const counts = {};
   (state.dataOptionRows || []).forEach(r => {
@@ -1441,7 +1552,10 @@ async function loadDataTable(options = {}) {
   if (!f.year) return;
   if (!f.month && !hasStoreSearch) return;
 
-  showLoading(options.loadingMessage || '데이터 조회 중입니다');
+  const canUsePeriodCache = !!f.month && state.dataOptionKey === getDataPeriodKey() && Array.isArray(state.dataOptionRows);
+  const needServer = !f.month || options.reloadOptions || !canUsePeriodCache;
+  if (needServer) showLoading(options.loadingMessage || '데이터 조회 중입니다');
+
   try {
     if (f.month && (options.reloadOptions || state.dataOptionKey !== getDataPeriodKey())) {
       await loadDataFilterOptions(true);
@@ -1462,16 +1576,26 @@ async function loadDataTable(options = {}) {
       type: '전체',
       storeSearch: f.storeSearch
     };
-    const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(queryFilters) });
-    state.dataRows = res.rows || [];
-    state.dataPage = 1;
 
+    if (f.month) {
+      // v30: 같은 연도/월 안에서는 영업부·팀·매장검색을 브라우저에서 즉시 필터링
+      // 기존처럼 필터를 바꿀 때마다 Apps Script를 다시 호출하지 않음
+      state.dataRows = applyAccidentClientFilters(state.dataOptionRows || [], queryFilters);
+    } else {
+      // 월을 고르지 않은 매장명 검색은 범위가 넓으므로 서버 조회 유지
+      const res = await callAPI({ action: 'query', division: state.division, filters: JSON.stringify(queryFilters) });
+      state.dataRows = res.rows || [];
+    }
+
+    state.dataPage = 1;
     renderDataFilters();
     renderDataTablePage();
     triggerAiAdviceTimer();
   } catch (err) {
     alert('데이터 조회 오류: ' + (err.message || err));
-  } finally { hideLoading(); }
+  } finally {
+    if (needServer) hideLoading();
+  }
 }
 
 /**
@@ -1836,6 +1960,43 @@ function setApprovalTrendRowsCache(filters, rows) {
 }
 
 
+function getApprovalBundleFilters_() {
+  const f = state.approvalFilters;
+  return {
+    year: f.year || '전체',
+    month: f.month || '전체',
+    dept: '전체',
+    team: '전체',
+    store: '전체',
+    type: '전체',
+    storeSearch: f.storeSearch || ''
+  };
+}
+
+async function loadApprovalBundleFromServer_() {
+  const f = getApprovalBundleFilters_();
+  const currentFilters = { ...f, year: f.year || '전체' };
+  const trendFilters = { ...f, year: '전체' };
+  const cachedRows = getApprovalRowsFromCache(currentFilters);
+  const cachedTrend = getApprovalTrendRowsFromCache(trendFilters);
+
+  if (cachedRows && cachedTrend) {
+    state.approvalBaseRows = cachedRows;
+    state.approvalTrendRows = cachedTrend;
+    state.approvalDataLoaded = true;
+    return true;
+  }
+
+  const res = await callAPI({ action: 'approvalBundle', division: '안전보건팀', filters: JSON.stringify(f) });
+  state.approvalBaseRows = res.currentRows || [];
+  state.approvalTrendRows = res.trendRows || [];
+  setApprovalRowsCache(currentFilters, state.approvalBaseRows);
+  setApprovalTrendRowsCache(trendFilters, state.approvalTrendRows);
+  state.approvalDataLoaded = true;
+  return false;
+}
+
+
 
 function isApprovedRow(r) {
   return String((r || {}).approvalYn || '').trim().toUpperCase() === 'Y';
@@ -1989,28 +2150,19 @@ async function loadApprovalDashboardData(options = {}) {
   const f = state.approvalFilters;
   if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
 
-  const currentFilters = { year: f.year || '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
-  const trendFilters = { year: '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
-  const cachedRows = getApprovalRowsFromCache(currentFilters);
-  const cachedTrend = getApprovalTrendRowsFromCache(trendFilters);
-  const canUseCache = !!cachedRows && !!cachedTrend;
+  const bundleFilters = getApprovalBundleFilters_();
+  const currentFilters = { ...bundleFilters, year: bundleFilters.year || '전체' };
+  const trendFilters = { ...bundleFilters, year: '전체' };
+  const canUseCache = !!getApprovalRowsFromCache(currentFilters) && !!getApprovalTrendRowsFromCache(trendFilters);
 
   if (!options.skipQuery && !canUseCache) showLoading(options.loadingMessage || '산재 승인 사고 대시보드를 조회 중입니다');
 
   try {
-    if (options.skipQuery || canUseCache) {
-      if (cachedRows) state.approvalBaseRows = cachedRows;
-      if (cachedTrend) state.approvalTrendRows = cachedTrend;
+    if (options.skipQuery && canUseCache) {
+      state.approvalBaseRows = getApprovalRowsFromCache(currentFilters) || [];
+      state.approvalTrendRows = getApprovalTrendRowsFromCache(trendFilters) || [];
     } else {
-      const [currentRes, trendRes] = await Promise.all([
-        callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(currentFilters) }),
-        callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(trendFilters) })
-      ]);
-      state.approvalBaseRows = currentRes.rows || [];
-      state.approvalTrendRows = trendRes.rows || [];
-      setApprovalRowsCache(currentFilters, state.approvalBaseRows);
-      setApprovalTrendRowsCache(trendFilters, state.approvalTrendRows);
-      state.approvalDataLoaded = true;
+      await loadApprovalBundleFromServer_();
     }
 
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
@@ -2330,21 +2482,14 @@ async function loadApprovalData(options = {}) {
   const f = state.approvalFilters;
   if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
 
-  const queryFilters = { year: f.year || '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
-  const cachedRows = getApprovalRowsFromCache(queryFilters);
-
-  if (!cachedRows) showLoading(options.loadingMessage || '산재 승인 사고 데이터를 조회 중입니다');
+  const bundleFilters = getApprovalBundleFilters_();
+  const currentFilters = { ...bundleFilters, year: bundleFilters.year || '전체' };
+  const trendFilters = { ...bundleFilters, year: '전체' };
+  const canUseCache = !!getApprovalRowsFromCache(currentFilters) && !!getApprovalTrendRowsFromCache(trendFilters);
+  if (!canUseCache) showLoading(options.loadingMessage || '산재 승인 사고 데이터를 조회 중입니다');
 
   try {
-    if (cachedRows) {
-      state.approvalBaseRows = cachedRows;
-    } else {
-      const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
-      state.approvalBaseRows = res.rows || [];
-      setApprovalRowsCache(queryFilters, state.approvalBaseRows);
-      state.approvalDataLoaded = true;
-    }
-
+    await loadApprovalBundleFromServer_();
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalPage = 1;
     renderApprovalFilters();
@@ -2352,7 +2497,7 @@ async function loadApprovalData(options = {}) {
   } catch (err) {
     alert('산재 승인 사고 데이터 조회 오류: ' + (err.message || err));
   } finally {
-    if (!cachedRows) hideLoading();
+    if (!canUseCache) hideLoading();
   }
 }
 
@@ -2507,21 +2652,14 @@ async function loadSevereStoreData(options = {}) {
   const f = state.approvalFilters;
   if (!f.year) f.year = state.initFilterData ? state.initFilterData.defaultYear : state.currentYear;
 
-  const queryFilters = { year: f.year || '전체', month: f.month || '전체', dept: '전체', team: '전체', store: '전체', type: '전체', storeSearch: f.storeSearch || '' };
-  const cachedRows = getApprovalRowsFromCache(queryFilters);
-
-  if (!cachedRows) showLoading(options.loadingMessage || '중상해 매장 데이터를 조회 중입니다');
+  const bundleFilters = getApprovalBundleFilters_();
+  const currentFilters = { ...bundleFilters, year: bundleFilters.year || '전체' };
+  const trendFilters = { ...bundleFilters, year: '전체' };
+  const canUseCache = !!getApprovalRowsFromCache(currentFilters) && !!getApprovalTrendRowsFromCache(trendFilters);
+  if (!canUseCache) showLoading(options.loadingMessage || '중상해 매장 데이터를 조회 중입니다');
 
   try {
-    if (cachedRows) {
-      state.approvalBaseRows = cachedRows;
-    } else {
-      const res = await callAPI({ action: 'query', division: '안전보건팀', filters: JSON.stringify(queryFilters) });
-      state.approvalBaseRows = res.rows || [];
-      setApprovalRowsCache(queryFilters, state.approvalBaseRows);
-      state.approvalDataLoaded = true;
-    }
-
+    await loadApprovalBundleFromServer_();
     state.approvalRows = applyApprovalClientFilters(state.approvalBaseRows);
     state.approvalSevereRows = getSevereStoreGroups(state.approvalRows);
     state.severePage = 1;
@@ -2531,7 +2669,7 @@ async function loadSevereStoreData(options = {}) {
   } catch (err) {
     alert('중상해 매장 조회 오류: ' + (err.message || err));
   } finally {
-    if (!cachedRows) hideLoading();
+    if (!canUseCache) hideLoading();
   }
 }
 
