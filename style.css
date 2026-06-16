@@ -4533,3 +4533,97 @@ h1 { font-size: 26px; color: var(--navy); margin: 0 0 18px; line-height: 1.22; f
   margin-top: 10px;
   border-top: 1px solid rgba(255,255,255,.14);
 }
+
+/* ============ v32 로딩 체크리스트 연출 ============ */
+.loader-card {
+  width: min(460px, calc(100vw - 36px));
+  padding: 30px 34px 28px;
+}
+.loader-sub {
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.45;
+}
+.loader-checklist {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+.loader-check-item {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 9px;
+  min-height: 30px;
+  padding: 8px 10px;
+  border-radius: 13px;
+  border: 1px solid rgba(0, 43, 109, .08);
+  background: #f8fafc;
+  color: #667085;
+  transition: background .22s ease, border-color .22s ease, color .22s ease, transform .22s ease;
+}
+.loader-check-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #d6dde8;
+  background: #fff;
+  color: transparent;
+  font-size: 14px;
+  font-weight: 1000;
+  line-height: 1;
+  box-sizing: border-box;
+}
+.loader-check-text {
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 900;
+  word-break: keep-all;
+}
+.loader-check-item.is-active {
+  background: #fff7e8;
+  border-color: rgba(224, 25, 39, .18);
+  color: #1f2937;
+  transform: translateX(2px);
+}
+.loader-check-item.is-active .loader-check-icon {
+  border-color: var(--red);
+  color: var(--red);
+  animation: loaderPulse .9s ease-in-out infinite;
+}
+.loader-check-item.is-done {
+  background: #f0fdf4;
+  border-color: rgba(22, 163, 74, .22);
+  color: #14532d;
+}
+.loader-check-item.is-done .loader-check-icon {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+.loader-check-item.is-pending .loader-check-icon {
+  color: transparent;
+}
+@keyframes loaderPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 25, 39, .18); }
+  50% { box-shadow: 0 0 0 5px rgba(224, 25, 39, .08); }
+}
+@media (max-width: 520px) {
+  .loader-card {
+    padding: 26px 20px 24px;
+  }
+  .loader-check-item {
+    grid-template-columns: 22px 1fr;
+    gap: 8px;
+    padding: 8px 9px;
+  }
+  .loader-check-text {
+    font-size: 12px;
+  }
+}

@@ -16,7 +16,7 @@
  * ============================================================ */
 
 // ★★★ 여기에 Apps Script 배포 URL을 붙여넣으세요 ★★★
-const API_URL = 'https://script.google.com/macros/s/AKfycbyE-e_Z-gWTqktkCf-4ZfZfY6a_CGsWDxyj4Alyf9raVjbd1EJOFd_2BB6wKdEPquK-SQ/exec'; 
+const API_URL = 'https://script.google.com/macros/s/AKfycbwYyY7iT3k_X7jJ7q3q3_X7jJ7q3_X7jJ7q3_X7j/exec'; 
 
 /* ============ CI 컬러 ============ */
 const CI_RED  = '#E60033';
@@ -113,37 +113,122 @@ let loadingStageList = [];
 /* ============ 유틸리티 ============ */
 function $(id) { return document.getElementById(id); }
 
+function escapeHtml_(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getLoadingIntro(msg) {
+  const text = String(msg || '');
+  if (text.includes('로그인')) return '접속 권한을 확인하고 있습니다. 잠시만 기다려주세요.';
+  if (text.includes('요약')) return '요약 이미지를 만들기 위해 데이터를 정리하고 있습니다.';
+  if (text.includes('이미지') || text.includes('ZIP')) return '이미지 파일을 만드는 중입니다. 창을 닫지 말아주세요.';
+  if (text.includes('초기')) return '사고 데이터를 수집하기 위해 시간이 필요합니다.';
+  return '사고 데이터를 수집하기 위해 시간이 필요합니다.';
+}
+
 function getLoadingStages(msg) {
   const text = String(msg || '');
 
   if (text.includes('로그인')) {
-    return ['접속 정보를 확인하고 있습니다.', '권한을 확인하고 있습니다.', '화면 진입을 준비하고 있습니다.'];
+    return [
+      '입력한 로그인 정보를 확인하는 중입니다.',
+      '접속 가능한 영업부문 권한을 확인하는 중입니다.',
+      '안전보건팀 전용 메뉴 표시 여부를 확인하는 중입니다.',
+      '대시보드 화면 진입을 준비하는 중입니다.'
+    ];
   }
   if (text.includes('초기')) {
-    return ['연도·월 정보를 불러오고 있습니다.', '조직 기준을 확인하고 있습니다.', '첫 화면 데이터를 정리하고 있습니다.'];
+    return [
+      '산업재해 원본 데이터를 조회하는 중입니다.',
+      '산재 승인 사고 데이터를 함께 불러오는 중입니다.',
+      '각 영업부문·팀·매장 정보를 나열하는 중입니다.',
+      '월별 필터와 대시보드 화면을 구성하는 중입니다.'
+    ];
   }
   if (text.includes('대시보드')) {
-    return ['데이터를 요청하고 있습니다.', '출퇴근재해 제외 기준을 적용하고 있습니다.', '카드와 그래프를 생성하고 있습니다.', '화면에 반영하고 있습니다.'];
+    return [
+      '저장된 사고 데이터를 확인하는 중입니다.',
+      '월·영업부문 기준으로 데이터를 분류하는 중입니다.',
+      '카드와 그래프에 들어갈 숫자를 계산하는 중입니다.',
+      '대시보드 화면에 결과를 반영하는 중입니다.'
+    ];
   }
   if (text.includes('데이터 조회') || text.includes('데이터를 조회')) {
-    return ['조회 조건을 확인하고 있습니다.', '대상 데이터를 불러오고 있습니다.', '목록을 정리하고 있습니다.', '결과 화면을 구성하고 있습니다.'];
+    return [
+      '조회 조건을 확인하는 중입니다.',
+      '저장된 사고 목록에서 대상 데이터를 찾는 중입니다.',
+      '영업부문·팀·매장 기준으로 목록을 정리하는 중입니다.',
+      '조회 결과 화면을 구성하는 중입니다.'
+    ];
   }
   if (text.includes('중상해') || text.includes('91일')) {
-    return ['근로손실일수를 확인하고 있습니다.', '91일 이상 재해를 선별하고 있습니다.', '매장별 목록을 정리하고 있습니다.', '결과 화면을 구성하고 있습니다.'];
+    return [
+      '근로손실일수 정보를 확인하는 중입니다.',
+      '91일 이상 산업재해를 선별하는 중입니다.',
+      '매장별 발생 현황을 정리하는 중입니다.',
+      '중상해 모니터링 화면을 구성하는 중입니다.'
+    ];
   }
   if (text.includes('상세')) {
-    return ['사고번호를 확인하고 있습니다.', '사고 상세 내용을 불러오고 있습니다.', '상세보기 화면을 구성하고 있습니다.'];
+    return [
+      '선택한 사고 항목을 확인하는 중입니다.',
+      '사고일자·매장·재해유형을 정리하는 중입니다.',
+      '사고 상세내용 팝업을 구성하는 중입니다.'
+    ];
   }
   if (text.includes('요약')) {
-    return ['요약 데이터를 불러오고 있습니다.', '카드와 그래프를 이미지로 구성하고 있습니다.', '미리보기 화면을 준비하고 있습니다.'];
+    return [
+      '요약 기준 월과 집계 범위를 확인하는 중입니다.',
+      '산업재해 승인 건수와 근로손실일수를 계산하는 중입니다.',
+      '3개년 비교·재해유형·영업부 그래프를 구성하는 중입니다.',
+      '요약 이미지를 미리보기 화면으로 준비하는 중입니다.'
+    ];
   }
   if (text.includes('이미지') || text.includes('ZIP')) {
-    return ['화면 이미지를 변환하고 있습니다.', '파일을 생성하고 있습니다.', '다운로드를 준비하고 있습니다.'];
+    return [
+      '요약 화면을 이미지로 변환하는 중입니다.',
+      '다운로드 파일을 생성하는 중입니다.',
+      '저장 가능한 상태로 마무리하는 중입니다.'
+    ];
   }
   if (text.includes('사고 리스트')) {
-    return ['선택한 조건을 확인하고 있습니다.', '사고 목록을 불러오고 있습니다.', '팝업 화면을 구성하고 있습니다.'];
+    return [
+      '선택한 조건을 확인하는 중입니다.',
+      '사고 목록을 불러오는 중입니다.',
+      '리스트 팝업 화면을 구성하는 중입니다.'
+    ];
   }
-  return ['작업을 준비하고 있습니다.', '데이터를 처리하고 있습니다.', '화면에 반영하고 있습니다.'];
+  return [
+    '작업 조건을 확인하는 중입니다.',
+    '필요한 데이터를 정리하는 중입니다.',
+    '화면에 반영하는 중입니다.'
+  ];
+}
+
+function renderLoadingChecklist(activeIndex, forceDone) {
+  const listEl = $('loaderChecklist');
+  if (!listEl) return;
+
+  const stages = loadingStageList.length ? loadingStageList : ['작업을 처리하고 있습니다.'];
+  const safeActive = Math.max(0, Math.min(stages.length - 1, Number(activeIndex) || 0));
+  const allDone = !!forceDone;
+
+  listEl.innerHTML = stages.map((stage, idx) => {
+    const done = allDone || idx < safeActive;
+    const active = !done && idx === safeActive;
+    const stateClass = done ? 'is-done' : (active ? 'is-active' : 'is-pending');
+    const icon = done ? '✓' : (active ? '•' : '');
+    return `
+      <div class="loader-check-item ${stateClass}">
+        <span class="loader-check-icon" aria-hidden="true">${icon}</span>
+        <span class="loader-check-text">${escapeHtml_(stage)}</span>
+      </div>`;
+  }).join('');
 }
 
 function updateLoadingProgress(percent, stageText) {
@@ -157,7 +242,11 @@ function updateLoadingProgress(percent, stageText) {
   if (percentEl) percentEl.textContent = loadingProgressValue + '%';
 
   const stages = loadingStageList.length ? loadingStageList : ['작업을 처리하고 있습니다.'];
-  const idx = Math.min(stages.length - 1, Math.floor((loadingProgressValue / 100) * stages.length));
+  const idx = loadingProgressValue >= 100
+    ? stages.length - 1
+    : Math.min(stages.length - 1, Math.floor((loadingProgressValue / 100) * stages.length));
+
+  renderLoadingChecklist(idx, loadingProgressValue >= 100);
   if (stepEl) stepEl.textContent = stageText || stages[idx] || stages[0];
 }
 
@@ -183,8 +272,9 @@ function showLoading(msg) {
   const loaderTitle = document.querySelector('.loader-title');
   const loaderSub = document.querySelector('.loader-sub');
   if (loaderTitle && msg) loaderTitle.textContent = msg;
-  if (loaderSub) loaderSub.textContent = '잠시만 기다려주세요. 현재 진행 상태를 표시하고 있습니다.';
+  if (loaderSub) loaderSub.textContent = getLoadingIntro(msg);
 
+  renderLoadingChecklist(0, false);
   updateLoadingProgress(6, loadingStageList[0]);
 
   loadingProgressTimer = setInterval(() => {
@@ -211,7 +301,7 @@ function hideLoading() {
     const overlay = $('loadingOverlay');
     if (overlay) overlay.classList.add('hidden');
     updateLoadingProgress(0, '작업을 준비하고 있습니다.');
-  }, 220);
+  }, 320);
 }
 
 function stableApiStringify_(value) {
